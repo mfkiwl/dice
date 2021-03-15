@@ -78,12 +78,12 @@ int main(int argc, char *argv[]) {
   const int_t img_height = 199;
   const int_t num_stripes = 10;
   const int_t stripe_width = 20;//img_width/num_stripes;
-  Teuchos::ArrayRCP<intensity_t> intensities(img_width*img_height,0.0);
+  Teuchos::ArrayRCP<storage_t> intensities(img_width*img_height,0);
   for(int_t y=0;y<img_height;++y){
     for(int_t stripe=0;stripe<=num_stripes/2;++stripe){
       for(int_t x=stripe*(2*stripe_width);x<stripe*(2*stripe_width)+stripe_width;++x){
         if(x>=img_width)continue;
-        intensities[y*img_width+x] = 255.0;
+        intensities[y*img_width+x] = 255;
       }
     }
   }
@@ -136,13 +136,13 @@ int main(int argc, char *argv[]) {
   // no shift should result in gamma = 0.0 and when the images are opposite gamma should = 4.0
   for(int_t shift=0;shift<11;shift++){
     *outStream << "processing shift: " << shift*2 << "\n";
-    Teuchos::ArrayRCP<intensity_t> intensitiesShift(img_width*img_height,0.0);
+    Teuchos::ArrayRCP<storage_t> intensitiesShift(img_width*img_height,0);
     for(int_t y=0;y<img_height;++y){
       for(int_t stripe=0;stripe<=num_stripes/2;++stripe){
         for(int_t x=stripe*(2*stripe_width) - shift*2;x<stripe*(2*stripe_width)+stripe_width - shift*2;++x){
           if(x>=img_width)continue;
           if(x<0)continue;
-          intensitiesShift[y*img_width+x] = 255.0;
+          intensitiesShift[y*img_width+x] = 255;
         }
       }
     }
@@ -177,14 +177,14 @@ int main(int argc, char *argv[]) {
   Teuchos::RCP<Local_Shape_Function> quad_shape_func_exact = Teuchos::rcp(new Quadratic_Shape_Function());
   Teuchos::RCP<Local_Shape_Function> quad_shape_func = Teuchos::rcp(new Quadratic_Shape_Function());
   assert(quad_shape_func_exact->parameters()->size()==12);
-  //(*quad_shape_func_exact)(0)  = 1.0; // A (should already by 1.0 from constructor)
+  //(*quad_shape_func_exact)(0)  = 1.0; // A (should already be 1.0 from constructor)
   (*quad_shape_func_exact)(1)  = 0.0002; // B
   (*quad_shape_func_exact)(2)  = 0.0003; // C
   (*quad_shape_func_exact)(3)  = 0.0004; // D
   (*quad_shape_func_exact)(4)  = 0.0005; // E
   (*quad_shape_func_exact)(5)  = 1.352; // F
   (*quad_shape_func_exact)(6)  = 0.0006; // G
-  //(*quad_shape_func_exact)(7)  = 1.0; // H (should already by 1.0 from constructor)
+  //(*quad_shape_func_exact)(7)  = 1.0; // H (should already be 1.0 from constructor)
   (*quad_shape_func_exact)(8)  = 0.0007; // I
   (*quad_shape_func_exact)(9)  = 0.0008; // J
   (*quad_shape_func_exact)(10) = 0.0009; // K
@@ -218,13 +218,13 @@ int main(int argc, char *argv[]) {
   Teuchos::RCP<DICe::Image> affineRef = Teuchos::rcp(new DICe::Image("./images/refSpeckled.tif"));
   const int_t affine_w = affineRef->width();
   const int_t affine_h = affineRef->height();
-  Teuchos::ArrayRCP<intensity_t> intensitiesMod(affine_w*affine_h,0.0);
+  Teuchos::ArrayRCP<storage_t> intensitiesMod(affine_w*affine_h,0.0);
   scalar_t mapped_x=0.0,mapped_y=0.0;
   for(int_t y=0;y<affine_h;++y){
     for(int_t x=0;x<affine_w;++x){
       quad_shape_func_exact->map(x,y,cx,cy,mapped_x,mapped_y);
       if(mapped_x>4.0&&mapped_x<affine_w-4.0&&mapped_y>4.0&&mapped_y<affine_h-4.0){
-        intensitiesMod[y*affine_w+x] = affineRef->interpolate_keys_fourth(mapped_x,mapped_y);
+        intensitiesMod[y*affine_w+x] = static_cast<storage_t>(affineRef->interpolate_keys_fourth(mapped_x,mapped_y));
       }
     } // end x pixel
   } // end y pixel
@@ -274,7 +274,16 @@ int main(int argc, char *argv[]) {
 
   num_iterations = 0;
   obj->computeUpdateRobust(quad_shape_func,num_iterations);
-  bool simplex_converged = quad_shape_func->test_for_convergence(*quad_shape_func_exact->parameters(),1.0E-3);
+
+  // When the storage type is integer-based (for example storage_t = uint16_t) the
+  // intensity values for the deformed image get truncated, this leads to errors in the
+  // the evaluation of the motion estimation. To deal with this the tol for int-based
+  // storage types is loosened for these tests
+  scalar_t simplex_error_max = 2.0E-3;
+  if(std::is_same<storage_t,double>::value||std::is_same<storage_t,float>::value)
+    simplex_error_max = 1.0E-3;
+
+  bool simplex_converged = quad_shape_func->test_for_convergence(*quad_shape_func_exact->parameters(),simplex_error_max);
   if(!simplex_converged){
     *outStream << "Error, simplex optimized solution is not correct" << std::endl;
     *outStream << "Quad shape function parameter values" << std::endl;

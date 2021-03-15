@@ -49,7 +49,6 @@
 #include <DICe_FFT.h>
 #include <DICe_Triangulation.h>
 #include <DICe_Simplex.h>
-#include <DICe_Cine.h>
 #if DICE_ENABLE_NETCDF
   #include <DICe_NetCDF.h>
 #endif
@@ -157,9 +156,29 @@ Schema::rotate_def_image(){
   }
 }
 
+// Note: this is meant to be called at the beginning of set_def_image, and not really anywhere else
+void
+Schema::swap_def_prev_images(){
+  DEBUG_MSG("Schema::swap_def_prev_images() called");
+  // update the previous image storage points
+  assert(def_imgs_.size()==prev_imgs_.size());
+  for(size_t i=0;i<def_imgs_.size();++i){
+    if(def_imgs_[i]==Teuchos::null) continue;
+    // ensure that the prev img storage is allocated and the right size
+    if(prev_imgs_[i]==Teuchos::null||prev_imgs_[i]->width()!=def_imgs_[i]->width()||prev_imgs_[i]->height()!=def_imgs_[i]->height())
+      prev_imgs_[i] = Teuchos::rcp(new DICe::Image(def_imgs_[i]));
+    // swap the reference counted pointers on the image memory storage
+    Teuchos::RCP<Image> hold_rcp = prev_imgs_[i]; // increase the reference count so the memory doesn't get deallocated
+    prev_imgs_[i] = def_imgs_[i];
+    def_imgs_[i] = hold_rcp;
+    DEBUG_MSG("Schema::swap_def_prev_images() prev and def images " << i << " were swapped");
+  }
+}
+
 void
 Schema::set_def_image(const std::string & defName){
-  DEBUG_MSG("Schema: Resetting the deformed image");
+  DEBUG_MSG("Schema::set_def_image(): Resetting the deformed image using a file name " << defName);
+//  swap_def_prev_images();
   assert(def_imgs_.size()>0);
   Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
   imgParams->set(DICe::compute_image_gradients,compute_def_gradients_);
@@ -167,20 +186,76 @@ Schema::set_def_image(const std::string & defName){
   imgParams->set(DICe::gauss_filter_mask_size,gauss_filter_mask_size_);
   imgParams->set(DICe::gradient_method,gradient_method_);
   imgParams->set(DICe::filter_failed_cine_pixels,filter_failed_cine_pixels_);
+  imgParams->set(DICe::convert_cine_to_8_bit,convert_cine_to_8_bit_);
+  imgParams->set(DICe::buffer_persistence_guaranteed,true);
   if(init_params_!=Teuchos::null){
     if(init_params_->isSublist(undistort_images)){
       imgParams->set(undistort_images,init_params_->sublist(undistort_images));
     }
   }
   const bool has_motion_window = motion_window_params_->size()>0;
-  // query the image dimensions:
+  DEBUG_MSG("Schema::set_def_image(): has motion window " << has_motion_window);
+
+  int_t w = 0, h = 0;
+  utils::read_image_dimensions(defName.c_str(),w,h);
+  bool force_reallocation = false;
+
+  int_t sub_width = 0, sub_height = 0;
+  int_t offset_x = 0, offset_y = 0;
+  int_t end_x = 0, end_y = 0;
+  if(has_extents_){
+    const int_t buffer = 100; // if the extents are within 100 pixels of the image boundary use the whole image
+    offset_x = def_extents_[0] > buffer && def_extents_[0] < w - buffer ? def_extents_[0] : 0;
+    offset_y = def_extents_[2] > buffer && def_extents_[2] < h - buffer ? def_extents_[2] : 0;
+    end_x = def_extents_[1] > buffer && def_extents_[1] < w - buffer ? def_extents_[1] : w;
+    end_y = def_extents_[3] > buffer && def_extents_[3] < h - buffer ? def_extents_[3] : h;
+    sub_width = end_x - offset_x;
+    sub_height = end_y - offset_y;
+  }
+
+  // if the image is from a cine file, load a large chunk of frames into the memory buffer
+  const int_t num_buffer_frames = !has_extents_ || has_motion_window ? CINE_BUFFER_NUM_FRAMES : 1; // the extents update after each frame so can only put one frame in the buffer
+  if((frame_id_-first_frame_id_)%num_buffer_frames==0){
+    if(DICe::utils::image_file_type(defName.c_str())==CINE){
+      std::string undecorated_cine_file = DICe::utils::cine_file_name(defName.c_str());
+      // test if this is a cross-correlation (if so, don't use a buffer since only one frame is needed)
+      // if it is a cross-correlation setting the def image, the ref and def images will come from different files
+      // hence the check below on the cine file name
+      assert(ref_img_!=Teuchos::null);
+      std::string undecorated_ref_cine_file = DICe::utils::cine_file_name(ref_img_->file_name().c_str());
+      if(undecorated_cine_file==undecorated_ref_cine_file){ // assumes ref image has already been set
+        // check if the window params are already set and just the frame needs to be updated
+        const hypercine::HyperCine::Bit_Depth_Conversion_Type conversion_type = convert_cine_to_8_bit_ ? hypercine::HyperCine::TO_8_BIT :
+            hypercine::HyperCine::QUAD_10_TO_12;
+        // get last frame of cine file:
+        const int_t frame_count = frame_id_ + num_buffer_frames >= first_frame_id_ + num_frames_ ?
+            first_frame_id_+num_frames_-frame_id_ : num_buffer_frames;
+        DEBUG_MSG("Schema::set_def_image(): *** reading cine buffer, frame id " << frame_id_ << " count " << frame_count);
+        if((frame_id_-first_frame_id_==0&&has_motion_window)||has_extents_){
+          hypercine::HyperCine::HyperFrame hf(frame_id_,frame_count);
+          if(has_motion_window){
+            for(std::map<int_t,Motion_Window_Params>::iterator it=motion_window_params_->begin();it!=motion_window_params_->end();++it){
+              hf.add_window(it->second.start_x_,
+                it->second.end_x_-it->second.start_x_,
+                it->second.start_y_,
+                it->second.end_y_ - it->second.start_y_);
+            }
+          }else{
+            hf.add_window(offset_x,sub_width,offset_y,sub_height);
+          }
+          DICe::utils::cine_file_read_buffer(undecorated_cine_file,conversion_type,hf);
+        }else{
+          DICe::utils::cine_file_read_buffer(undecorated_cine_file,conversion_type,frame_id_,frame_count);
+        }
+      }else{
+        DEBUG_MSG("Schema::set_def_image(): skipping reading cine buffer since the ref and def images come from different cine files (likely cross-correlation)");
+        imgParams->set(DICe::buffer_persistence_guaranteed,false);
+      }
+    }
+  }
+
   for(size_t id=0;id<def_imgs_.size();++id){
     if(has_extents_||has_motion_window){
-      int_t w = 0, h = 0;
-      int_t sub_width = 0, sub_height = 0;
-      int_t offset_x = 0, offset_y = 0;
-      int_t end_x = 0, end_y = 0;
-      utils::read_image_dimensions(defName.c_str(),w,h);
       if(has_motion_window){
         bool found_id = false;
         for(std::map<int_t,Motion_Window_Params>::iterator it=motion_window_params_->begin();it!=motion_window_params_->end();++it){
@@ -189,6 +264,8 @@ Schema::set_def_image(const std::string & defName){
             offset_y = it->second.start_y_;
             end_x = it->second.end_x_;
             end_y = it->second.end_y_;
+            sub_width = end_x - offset_x;
+            sub_height = end_y - offset_y;
             found_id = true;
             break;
           }
@@ -197,25 +274,26 @@ Schema::set_def_image(const std::string & defName){
           TEUCHOS_TEST_FOR_EXCEPTION(true,std::runtime_error,
             "No motion window found for this sub image id, if motion windows are used, one must be set for each subset");
         }
-      }else{
-        const int_t buffer = 100; // if the extents are within 100 pixels of the image boundary use the whole image
-        offset_x = def_extents_[0] > buffer && def_extents_[0] < w - buffer ? def_extents_[0] : 0;
-        offset_y = def_extents_[2] > buffer && def_extents_[2] < h - buffer ? def_extents_[2] : 0;
-        end_x = def_extents_[1] > buffer && def_extents_[1] < w - buffer ? def_extents_[1] : w;
-        end_y = def_extents_[3] > buffer && def_extents_[3] < h - buffer ? def_extents_[3] : h;
       }
-      sub_width = end_x - offset_x;
-      sub_height = end_y - offset_y;
+      imgParams->set(DICe::subimage_width,sub_width);
+      imgParams->set(DICe::subimage_height,sub_height);
+      imgParams->set(DICe::subimage_offset_x,offset_x);
+      imgParams->set(DICe::subimage_offset_y,offset_y);
       DEBUG_MSG("Setting the deformed image using extents x: " << offset_x << " to " << end_x <<
         " y: " << offset_y << " to " << end_y << " width " << sub_width << " height " << sub_height);
-      def_imgs_[id] = Teuchos::rcp( new Image(defName.c_str(),offset_x,offset_y,sub_width,sub_height,imgParams));
+      if(def_imgs_[id]!=Teuchos::null)
+        if(def_imgs_[id]->width()!=sub_width||def_imgs_[id]->height()!=sub_height)
+          force_reallocation = true;
     }else{
-      // see if the image has already been allocated:
-      if(def_imgs_[id]==Teuchos::null)
-        def_imgs_[id] = Teuchos::rcp( new Image(defName.c_str(),imgParams));
-      else
-        def_imgs_[id]->update_image_fields(defName.c_str(),imgParams);
+      if(def_imgs_[id]!=Teuchos::null) // detect if the overall image dimensions changed
+        if(def_imgs_[id]->width()!=w || def_imgs_[id]->height()!=h)
+          force_reallocation = true;
     }
+    // see if the image has already been allocated:
+    if(def_imgs_[id]==Teuchos::null||force_reallocation)
+      def_imgs_[id] = Teuchos::rcp( new Image(defName.c_str(),imgParams));
+    else
+      def_imgs_[id]->update(defName.c_str(),imgParams);
     if(def_image_rotation_!=ZERO_DEGREES){
       def_imgs_[id] = def_imgs_[id]->apply_rotation(def_image_rotation_);
     }
@@ -226,7 +304,8 @@ Schema::set_def_image(const std::string & defName){
 void
 Schema::set_def_image(Teuchos::RCP<Image> img,
   const int_t id){
-  DEBUG_MSG("Schema::set_def_image() Resetting the deformed image for sub image id " << id);
+  DEBUG_MSG("Schema::set_def_image() Resetting the deformed image (using an Image object) for sub image id " << id);
+//  swap_def_prev_images();
   assert(def_imgs_.size()>0);
   assert(id<(int_t)def_imgs_.size());
   def_imgs_[id] = img;
@@ -247,9 +326,10 @@ Schema::set_def_image(Teuchos::RCP<Image> img,
 void
 Schema::set_def_image(const int_t img_width,
   const int_t img_height,
-  const Teuchos::ArrayRCP<intensity_t> defRCP,
+  const Teuchos::ArrayRCP<storage_t> defRCP,
   const int_t id){
-  DEBUG_MSG("Schema:  Resetting the deformed image");
+  DEBUG_MSG("Schema::set_def_image() Resetting the deformed image using an ArrayRCP");
+//  swap_def_prev_images();
   assert(def_imgs_.size()>0);
   assert(id<(int_t)def_imgs_.size());
   TEUCHOS_TEST_FOR_EXCEPTION(img_width<=0,std::runtime_error,"");
@@ -267,15 +347,6 @@ Schema::set_def_image(const int_t img_width,
 }
 
 void
-Schema::set_prev_image(Teuchos::RCP<Image> img,
-  const int_t id){
-  DEBUG_MSG("Schema::set_prev_image() Resetting the previous image for sub image id " << id);
-  assert(prev_imgs_.size()>0);
-  assert(id<(int_t)prev_imgs_.size());
-  prev_imgs_[id] = img;
-}
-
-void
 Schema::set_ref_image(const std::string & refName){
   DEBUG_MSG("Schema:  Resetting the reference image");
   Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
@@ -285,6 +356,7 @@ Schema::set_ref_image(const std::string & refName){
   imgParams->set(DICe::gradient_method,gradient_method_);
   imgParams->set(DICe::compute_laplacian_image,compute_laplacian_image_);
   imgParams->set(DICe::filter_failed_cine_pixels,filter_failed_cine_pixels_);
+  imgParams->set(DICe::convert_cine_to_8_bit,convert_cine_to_8_bit_);
   if(init_params_!=Teuchos::null){
     if(init_params_->isSublist(undistort_images)){
       imgParams->set(undistort_images,init_params_->sublist(undistort_images));
@@ -297,10 +369,14 @@ Schema::set_ref_image(const std::string & refName){
     const int_t offset_y = ref_extents_[2] > buffer && ref_extents_[2] < full_ref_img_height_ - buffer ? ref_extents_[2] : 0;
     const int_t end_x = ref_extents_[1] > buffer && ref_extents_[1] < full_ref_img_width_ - buffer ? ref_extents_[1] : full_ref_img_width_;
     const int_t end_y = ref_extents_[3] > buffer && ref_extents_[3] < full_ref_img_height_ - buffer ? ref_extents_[3] : full_ref_img_height_;
-    const int_t width = end_x - offset_x;
-    const int_t height = end_y - offset_y;
+    const int_t sub_width = end_x - offset_x;
+    const int_t sub_height = end_y - offset_y;
+    imgParams->set(DICe::subimage_width,sub_width);
+    imgParams->set(DICe::subimage_height,sub_height);
+    imgParams->set(DICe::subimage_offset_x,offset_x);
+    imgParams->set(DICe::subimage_offset_y,offset_y);
     DEBUG_MSG("Setting the reference image using extents x: " << offset_x << " to " << end_x << " y: " << offset_y << " to " << end_y);
-    ref_img_ = Teuchos::rcp( new Image(refName.c_str(),offset_x,offset_y,width,height,imgParams));
+    ref_img_ = Teuchos::rcp( new Image(refName.c_str(),imgParams));
   }
   else
     ref_img_ = Teuchos::rcp( new Image(refName.c_str(),imgParams));
@@ -318,7 +394,7 @@ Schema::set_ref_image(const std::string & refName){
 void
 Schema::set_ref_image(const int_t img_width,
   const int_t img_height,
-  const Teuchos::ArrayRCP<intensity_t> refRCP){
+  const Teuchos::ArrayRCP<storage_t> refRCP){
   DEBUG_MSG("Schema:  Resetting the reference image");
   TEUCHOS_TEST_FOR_EXCEPTION(img_width<=0,std::runtime_error,"");
   TEUCHOS_TEST_FOR_EXCEPTION(img_height<=0,std::runtime_error,"");
@@ -333,7 +409,7 @@ Schema::set_ref_image(const int_t img_width,
     ref_img_ = ref_img_->apply_rotation(ref_image_rotation_,imgParams);
   }
   if(prev_imgs_[0]==Teuchos::null){
-    prev_imgs_[0] = ref_img_;//Teuchos::rcp( new Image(img_width,img_height,refRCP,imgParams));
+    prev_imgs_[0] = Teuchos::rcp(new Image(ref_img_,imgParams));//Teuchos::rcp( new Image(img_width,img_height,refRCP,imgParams));
     // dont apply the rotation because the pointer is set to the ref image which has already been rotated
 //    if(ref_image_rotation_!=ZERO_DEGREES){
 //      prev_imgs_[0] = prev_imgs_[0]->apply_rotation(ref_image_rotation_,imgParams);
@@ -359,7 +435,7 @@ Schema::set_ref_image(Teuchos::RCP<Image> img){
     ref_img_ = ref_img_->apply_rotation(ref_image_rotation_,imgParams);
   }
   if(prev_imgs_[0]==Teuchos::null){
-    prev_imgs_[0] = ref_img_;
+    prev_imgs_[0] = Teuchos::rcp(new DICe::Image(ref_img_));
   }
 }
 
@@ -449,6 +525,13 @@ Schema::set_params(const Teuchos::RCP<Teuchos::ParameterList> & params){
             paramValid = true;
           }
         }
+        // catch post processor entries
+        for(int_t j=0;j<DICe::num_valid_post_processor_params;++j){
+          if(it->first==valid_post_processor_params[j]){
+            diceParams->setEntry(it->first,it->second); // overwrite the default value with argument param specified values
+            paramValid = true;
+          }
+        }
         if(!paramValid){
           allParamsValid = false;
           if(proc_rank == 0) std::cout << "Error: Invalid parameter: " << it->first << std::endl;
@@ -458,6 +541,9 @@ Schema::set_params(const Teuchos::RCP<Teuchos::ParameterList> & params){
         if(proc_rank == 0) std::cout << "NOTE: valid parameters include: " << std::endl;
         for(int_t j=0;j<DICe::num_valid_global_correlation_params;++j){
           if(proc_rank == 0) std::cout << valid_global_correlation_params[j].name_ << std::endl;
+        }
+        for(int_t j=0;j<DICe::num_valid_post_processor_params;++j){
+          if(proc_rank == 0) std::cout << valid_post_processor_params[j] << std::endl;
         }
       }
       TEUCHOS_TEST_FOR_EXCEPTION(!allParamsValid,std::invalid_argument,"Invalid parameter");
@@ -540,6 +626,7 @@ Schema::set_params(const Teuchos::RCP<Teuchos::ParameterList> & params){
   sort_txt_output_ = diceParams->get<bool>(DICe::sort_txt_output,false);
   gauss_filter_images_ = diceParams->get<bool>(DICe::gauss_filter_images,false);
   filter_failed_cine_pixels_ = diceParams->get<bool>(DICe::filter_failed_cine_pixels,false);
+  convert_cine_to_8_bit_ = diceParams->get<bool>(DICe::convert_cine_to_8_bit,true);
   gauss_filter_mask_size_ = diceParams->get<int_t>(DICe::gauss_filter_mask_size,7);
   compute_ref_gradients_ = diceParams->get<bool>(DICe::compute_ref_gradients,true);
   compute_def_gradients_ = diceParams->get<bool>(DICe::compute_def_gradients,false);
@@ -672,6 +759,15 @@ Schema::set_params(const Teuchos::RCP<Teuchos::ParameterList> & params){
     Teuchos::RCP<VSG_Strain_Post_Processor> vsg_ptr = Teuchos::rcp (new VSG_Strain_Post_Processor(ppParams));
     post_processors_.push_back(vsg_ptr);
   }
+  if(diceParams->isParameter(DICe::post_process_plotly_contour)){
+    Teuchos::ParameterList sublist = diceParams->sublist(DICe::post_process_plotly_contour);
+    Teuchos::RCP<Teuchos::ParameterList> ppParams = Teuchos::rcp( new Teuchos::ParameterList());
+    for(Teuchos::ParameterList::ConstIterator it=sublist.begin();it!=sublist.end();++it){
+      ppParams->setEntry(it->first,it->second);
+    }
+    Teuchos::RCP<Plotly_Contour_Post_Processor> pc_ptr = Teuchos::rcp (new Plotly_Contour_Post_Processor(ppParams));
+    post_processors_.push_back(pc_ptr);
+  }
   if(diceParams->isParameter(DICe::post_process_nlvc_strain)){
     Teuchos::ParameterList sublist = diceParams->sublist(DICe::post_process_nlvc_strain);
     Teuchos::RCP<Teuchos::ParameterList> ppParams = Teuchos::rcp( new Teuchos::ParameterList());
@@ -737,16 +833,16 @@ Schema::set_params(const Teuchos::RCP<Teuchos::ParameterList> & params){
 
   if(diceParams->isParameter(DICe::exact_solution_constant_value_x)||diceParams->isParameter(DICe::exact_solution_constant_value_y)){
     TEUCHOS_TEST_FOR_EXCEPTION(diceParams->get<bool>(DICe::estimate_resolution_error,false),std::runtime_error,"");
-    const scalar_t value_x = diceParams->get<scalar_t>(DICe::exact_solution_constant_value_x,0.0);
-    const scalar_t value_y = diceParams->get<scalar_t>(DICe::exact_solution_constant_value_y,0.0);
+    const scalar_t value_x = diceParams->get<double>(DICe::exact_solution_constant_value_x,0.0);
+    const scalar_t value_y = diceParams->get<double>(DICe::exact_solution_constant_value_y,0.0);
     compute_laplacian_image_ = true;
-    image_deformer_ = Teuchos::rcp(new ConstantValue_Image_Deformer(value_x,value_y));
+    image_deformer_ = Teuchos::rcp(new Image_Deformer(value_x,value_y,Image_Deformer::CONSTANT_VALUE));
   }
   if(diceParams->isParameter(DICe::exact_solution_dic_challenge_14)){
     TEUCHOS_TEST_FOR_EXCEPTION(diceParams->get<bool>(DICe::estimate_resolution_error,false),std::runtime_error,"");
-    const scalar_t value = diceParams->get<scalar_t>(DICe::exact_solution_dic_challenge_14,0.0);
+    const scalar_t value = diceParams->get<double>(DICe::exact_solution_dic_challenge_14,0.0);
     compute_laplacian_image_ = true;
-    image_deformer_ = Teuchos::rcp(new DICChallenge14_Image_Deformer(value));
+    image_deformer_ = Teuchos::rcp(new Image_Deformer(value,0.0,Image_Deformer::DIC_CHALLENGE_14));
   }
 }
 
@@ -867,7 +963,7 @@ Schema::initialize(const Teuchos::RCP<Teuchos::ParameterList> & input_params,
     //  "Error, missing required input parameter: mesh_size");
     if(input_params->isParameter(DICe::mesh_size)){
       const scalar_t mesh_size = input_params->get<double>(DICe::mesh_size);
-      init_params_->set(DICe::mesh_size,mesh_size); // pass the mesh size to the stored parameters for this schema (used by global method)
+      init_params_->set(DICe::mesh_size,(double)mesh_size); // pass the mesh size to the stored parameters for this schema (used by global method)
     }
     //TEUCHOS_TEST_FOR_EXCEPTION(!input_params->isParameter(DICe::subset_file),std::runtime_error,
     //  "Error, missing required input parameter: subset_file");
@@ -1305,6 +1401,7 @@ Schema::post_execution_tasks(){
     global_algorithm_->post_execution_tasks(frame_id_);
 #endif
   }
+  swap_def_prev_images();
 }
 
 void
@@ -1318,8 +1415,8 @@ Schema::project_right_image_into_left_frame(Teuchos::RCP<Triangulation> tri,
   const int_t oly = ref_img_->offset_y();
   const int_t orx = reference ? ref_img_->offset_x() : def_imgs_[0]->offset_x();
   const int_t ory = reference ? ref_img_->offset_y() : def_imgs_[0]->offset_y();
-  Teuchos::RCP<Image> proj_img = Teuchos::rcp(new Image(w,h,0.0,olx,oly));
-  Teuchos::ArrayRCP<intensity_t> intens = proj_img->intensities();
+  Teuchos::RCP<Image> proj_img = reference ? Teuchos::rcp(new Image(ref_img_)) : Teuchos::rcp(new Image(def_imgs_[0]));
+  Teuchos::ArrayRCP<storage_t> intens = proj_img->intensities();
   scalar_t xr = 0.0;
   scalar_t yr = 0.0;
   for(int_t j=0;j<h;++j){
@@ -1585,8 +1682,6 @@ Schema::execute_correlation(){
     }
     if(output_deformed_subset_images_)
       write_deformed_subsets_image();
-    for(size_t i=0;i<prev_imgs_.size();++i)
-      prev_imgs_[i]=def_imgs_[i];
   }
   else
     TEUCHOS_TEST_FOR_EXCEPTION(true,std::invalid_argument,"ERROR: unknown correlation routine.");
@@ -2199,7 +2294,7 @@ Schema::write_deformed_subset_intensity_image(Teuchos::RCP<Objective> obj){
   for(int_t i=0;i<num_zeros;++i)
     ss << "0";
   ss << frame_id_ << ".tif";
-  obj->subset()->write_tiff(ss.str(),true);
+  obj->subset()->write_image(ss.str(),true);
 }
 
 void
@@ -2224,7 +2319,7 @@ Schema::write_reference_subset_intensity_image(Teuchos::RCP<Objective> obj){
   for(int_t i=0;i<num_zeros;++i)
     ss << "0";
   ss << frame_id_ << ".tif";
-  obj->subset()->write_tiff(ss.str());
+  obj->subset()->write_image(ss.str());
 }
 
 void
@@ -2233,21 +2328,19 @@ Schema::estimate_resolution_error(const Teuchos::RCP<Teuchos::ParameterList> & c
   std::string & resolution_output_folder,
   std::string & prefix,
   Teuchos::RCP<std::ostream> & outStream){
-#if DICE_KOKKOS
-#else
   const int_t proc_id = comm_->get_rank();
   assert(ref_img_->width()>0);
   assert(ref_img_->height()>0);
   const scalar_t min_dim = ref_img_->width() < ref_img_->height() ? ref_img_->width() : ref_img_->height();
-  const scalar_t min_period = correlation_params->get<scalar_t>(DICe::estimate_resolution_error_min_period,25);
-  const scalar_t max_period = correlation_params->get<scalar_t>(DICe::estimate_resolution_error_max_period,min_dim/3.0);
+  const scalar_t min_period = correlation_params->get<double>(DICe::estimate_resolution_error_min_period,25);
+  const scalar_t max_period = correlation_params->get<double>(DICe::estimate_resolution_error_max_period,min_dim/3.0);
   TEUCHOS_TEST_FOR_EXCEPTION(min_period > max_period,std::runtime_error," min period " << min_period << " max period: " << max_period);
-  const scalar_t period_factor = correlation_params->get<scalar_t>(DICe::estimate_resolution_error_period_factor,0.5);
-  const scalar_t min_amp = correlation_params->get<scalar_t>(DICe::estimate_resolution_error_min_amplitude,0.5);
-  const scalar_t max_amp = correlation_params->get<scalar_t>(DICe::estimate_resolution_error_max_amplitude,4.0);
-  const scalar_t amp_step = correlation_params->get<scalar_t>(DICe::estimate_resolution_error_amplitude_step,0.5);
-  const scalar_t speckle_size = correlation_params->get<scalar_t>(DICe::estimate_resolution_error_speckle_size,-1.0);
-  const scalar_t noise_percent = correlation_params->get<scalar_t>(DICe::estimate_resolution_error_noise_percent,-1.0);
+  const scalar_t period_factor = correlation_params->get<double>(DICe::estimate_resolution_error_period_factor,0.5);
+  const scalar_t min_amp = correlation_params->get<double>(DICe::estimate_resolution_error_min_amplitude,0.5);
+  const scalar_t max_amp = correlation_params->get<double>(DICe::estimate_resolution_error_max_amplitude,4.0);
+  const scalar_t amp_step = correlation_params->get<double>(DICe::estimate_resolution_error_amplitude_step,0.5);
+  const scalar_t speckle_size = correlation_params->get<double>(DICe::estimate_resolution_error_speckle_size,-1.0);
+  const scalar_t noise_percent = correlation_params->get<double>(DICe::estimate_resolution_error_noise_percent,-1.0);
 
   // the full image width and height must be set
   TEUCHOS_TEST_FOR_EXCEPTION(full_ref_img_width_<=0||full_ref_img_height_<=0,std::runtime_error,"");
@@ -2357,7 +2450,7 @@ Schema::estimate_resolution_error(const Teuchos::RCP<Teuchos::ParameterList> & c
     Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
     imgParams->set(DICe::compute_image_gradients,true);
     imgParams->set(DICe::gradient_method,gradient_method_);
-    Teuchos::RCP<Image> speckled_ref = create_synthetic_speckle_image(ref_img_->width(),ref_img_->height(),
+    Teuchos::RCP<Image> speckled_ref = create_synthetic_speckle_image<storage_t>(ref_img_->width(),ref_img_->height(),
       ref_img_->offset_x(),ref_img_->offset_y(),speckle_size,imgParams);
     set_ref_image(speckled_ref);
   }
@@ -2413,7 +2506,7 @@ Schema::estimate_resolution_error(const Teuchos::RCP<Teuchos::ParameterList> & c
       if(proc_id==0)
         std::cout << "processing resolution error for period " << period << " amplitude " << amplitude << std::endl;
       // create an image deformer class
-      image_deformer_ = Teuchos::rcp(new SinCos_Image_Deformer(period,amplitude));
+      image_deformer_ = Teuchos::rcp(new Image_Deformer(period,amplitude,Image_Deformer::SIN_COS));
       std::stringstream sincos_name;
       Teuchos::RCP<Image> def_img;
       std::stringstream amp_ss;
@@ -2649,7 +2742,6 @@ Schema::estimate_resolution_error(const Teuchos::RCP<Teuchos::ParameterList> & c
       result_stream.str("");
     } // end step loop
   } // end mag loop
-#endif
 }
 
 int_t
@@ -3021,7 +3113,7 @@ Schema::write_control_points_image(const std::string & fileName,
   const int_t oy = img->offset_y();
 
   // first, create new intensities based on the old
-  Teuchos::ArrayRCP<intensity_t> intensities(width*height,0.0);
+  Teuchos::ArrayRCP<storage_t> intensities(width*height,0);
   for (int_t i=0;i<width*height;++i)
     intensities[i] = (*img)(i);
 
@@ -3182,6 +3274,7 @@ Schema::write_output(const std::string & output_folder,
       fName << "." << proc_size << "." << my_proc;
     fName << ".txt";
     std::FILE * filePtr = fopen(fName.str().c_str(),"w");
+
     if(separate_header_file && frame_id_<= first_frame_id_+frame_skip_ && my_proc==0){
       std::FILE * infoFilePtr = fopen(infoName.str().c_str(),"w"); // overwrite the file if it exists
       output_spec_->write_info(infoFilePtr,true);
@@ -3339,7 +3432,7 @@ Schema::write_deformed_subsets_image(const bool use_gamma_as_color){
   const int_t w = ref_img_->width();
   const int_t h = ref_img_->height();
 
-  Teuchos::ArrayRCP<intensity_t> intensities(w*h,0.0);
+  Teuchos::ArrayRCP<storage_t> intensities(w*h,0);
 
   // construct a copy of the base image to use as layer 0 for the output;
   // read each sub image if motion windows are used

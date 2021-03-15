@@ -143,30 +143,32 @@ void match_features(Teuchos::RCP<Image> left_image,
   }
 
   delete [] left_array;
+  delete [] right_array;
 }
 
-void opencv_8UC1(Teuchos::RCP<Image> image, unsigned char * array){
-  Teuchos::ArrayRCP<intensity_t> intensities = image->intensities();
+template <typename S>
+void opencv_8UC1(Teuchos::RCP<Image_<S>> image, unsigned char * array){
+  Teuchos::ArrayRCP<S> intensities = image->intensities();
   // need to scale the vaues to 0-255
   const int_t w = image->width();
   const int_t h = image->height();
   const int_t num_px = w*h;
-  intensity_t max_intensity = -1.0E10;
-  intensity_t min_intensity = 1.0E10;
+  storage_t max_intensity = std::numeric_limits<S>::min();
+  storage_t min_intensity = std::numeric_limits<S>::max();
   for(int_t i=0; i<num_px; ++i){
     if(intensities[i] > max_intensity) max_intensity = intensities[i];
     if(intensities[i] < min_intensity) min_intensity = intensities[i];
   }
   assert(max_intensity >= min_intensity);
+  scalar_t fac = 1.0;
+  DEBUG_MSG("opencv_8UC1(): max intensity: " << max_intensity << " min intensity: " << min_intensity << " converted max " << (std::floor((max_intensity-min_intensity)*fac)) <<
+    " converted min " << (std::floor((min_intensity-min_intensity)*fac)));
   if(max_intensity <= 255 && min_intensity >=0){ // already in 8 bit range, no need to convert
     for(int_t i=0; i<num_px; ++i)
       array[i] = std::floor(intensities[i]);
   }else{
-    intensity_t fac = 1.0;
     if((max_intensity - min_intensity) != 0.0)
       fac = 255.0 / (max_intensity - min_intensity);
-    DEBUG_MSG("opencv_8UC1(): max intensity: " << max_intensity << " min intensity: " << min_intensity << " converted max " << (std::floor((max_intensity-min_intensity)*fac)) <<
-      " converted min " << (std::floor((min_intensity-min_intensity)*fac)));
     assert(std::floor((max_intensity-min_intensity)*fac)<=255);
     for(int_t i=0; i<num_px; ++i)
       array[i] = std::floor((intensities[i]-min_intensity)*fac);

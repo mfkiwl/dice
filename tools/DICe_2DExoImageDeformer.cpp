@@ -137,7 +137,7 @@ int main(int argc, char *argv[]) {
   const int_t img_w = ref_img->width();
   const int_t img_h = ref_img->height();
   const int_t num_px = img_w*img_h;
-  Teuchos::ArrayRCP<intensity_t> def_intens(num_px,0.0);
+  Teuchos::ArrayRCP<scalar_t> def_intens(num_px,0.0);
 
   // build a kd tree for the displacement values:
   // create neighborhood lists using nanoflann:
@@ -256,7 +256,7 @@ int main(int argc, char *argv[]) {
       fprintf(imgFilePtr,"%4.4E,%4.4E,%4.4E,%4.4E,%4.4E\n",mx,my,0.0,out_bx,out_by);
 
       // apply the displacement to the image
-      const intensity_t intens = ref_img->interpolate_keys_fourth(px-bx,py-by);
+      const scalar_t intens = ref_img->interpolate_keys_fourth(px-bx,py-by);
       def_intens[py*img_w+px] = intens > 0.0 ? intens : 0.0;
     } // end px
   } // end py
@@ -264,7 +264,7 @@ int main(int argc, char *argv[]) {
   fclose(imgFilePtr);
 
   // output the deformed image:
-  Teuchos::RCP<Image> def_img = Teuchos::rcp(new Image(img_w,img_h,def_intens));
+  Teuchos::RCP<Scalar_Image> def_img = Teuchos::rcp(new Scalar_Image(img_w,img_h,def_intens));
   def_img->write(output_image_name);
 
   delete [] WORK;

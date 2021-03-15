@@ -70,23 +70,27 @@ int main(int argc, char *argv[]) {
   *outStream << "--- Begin test ---" << std::endl;
 
   // create a netcdf reader:
-  Teuchos::RCP<Image> img = Teuchos::rcp(new Image("../images/goes14.2016.222.215844.BAND_01.nc"));
+  Teuchos::RCP<Scalar_Image> img = Teuchos::rcp(new Scalar_Image("../images/goes14.2016.222.215844.BAND_01.nc"));
   //img->write("netcdf_image.tif");
   //img->write("netcdf.rawi");
 
   // read the gold version of this image
-  Teuchos::RCP<Image> gold_img = Teuchos::rcp(new Image("../images/netcdf.rawi"));
+  Teuchos::RCP<Scalar_Image> gold_img = Teuchos::rcp(new Scalar_Image("../images/netcdf.rawi"));
   const scalar_t diff = img->diff(gold_img);
   *outStream << "gold diff " << diff << std::endl;
   if(std::abs(diff) > errorTol){
     errorFlag++;
     *outStream << "Error, the NetCDF image was not read correctly" << std::endl;
   }
-
-  Image subImg("../images/goes14.2016.222.215844.BAND_01.nc",1235,491,496,370);
+  Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
+  imgParams->set(DICe::subimage_width,496);
+  imgParams->set(DICe::subimage_height,370);
+  imgParams->set(DICe::subimage_offset_x,1235);
+  imgParams->set(DICe::subimage_offset_y,491);
+  Scalar_Image subImg("../images/goes14.2016.222.215844.BAND_01.nc",imgParams);
   subImg.write("netcdf_sub_image.tif");
   //subImg.write("netcdf_sub_image.rawi");
-  Teuchos::RCP<Image> gold_sub_img = Teuchos::rcp(new Image("../images/netcdf_sub_image.rawi"));
+  Teuchos::RCP<Scalar_Image> gold_sub_img = Teuchos::rcp(new Scalar_Image("../images/netcdf_sub_image.rawi"));
   const scalar_t sub_diff = subImg.diff(gold_sub_img);
   //gold_sub_img->write("gold.tif");
   *outStream << "sub gold diff " << sub_diff << std::endl;
@@ -111,7 +115,7 @@ int main(int argc, char *argv[]) {
   *outStream << "created output netcdf file " << std::endl;
   netcdf_writer->write_float_array("data",0,data_vec);
 
-  Teuchos::RCP<Image> test_img = Teuchos::rcp(new Image("./test.nc"));
+  Teuchos::RCP<Scalar_Image> test_img = Teuchos::rcp(new Scalar_Image("./test.nc"));
   test_img->write("test_img.tif");
   const scalar_t test_diff = test_img->diff(gold_sub_img);
   *outStream << "test diff " << test_diff << std::endl;

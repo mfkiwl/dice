@@ -156,6 +156,7 @@ if(DEFINED NetCDF_DIR)
       SET(DICE_LIBRARIES ${DICE_LIBRARIES} ${HDF5_hl_lib})
       ADD_DEFINITIONS(-DDICE_ENABLE_NETCDF=1)
       include_directories(${NetCDF_DIR}/../include)
+      link_directories(${NetCDF_DIR}/../lib)
       IF(WIN32)
         FILE(GLOB NetCDF_DLLS ${NetCDF_DIR}/../bin/*.dll)
         FILE(COPY ${NetCDF_DLLS} DESTINATION ${DICE_OUTPUT_PREFIX}/bin)
@@ -167,24 +168,45 @@ else()
   MESSAGE(STATUS "NetCDF will NOT be enabled")
 endif()
 
+#
+# Hypercine library for reading cine files
+#
 include(ExternalProject)
-MESSAGE(STATUS "Building DICe_utils from ${CMAKE_CURRENT_SOURCE_DIR}")
-ExternalProject_Add(DICe_utils
-  PREFIX ${CMAKE_CURRENT_SOURCE_DIR}/src/utils
-  DOWNLOAD_COMMAND ""
-  UPDATE_COMMAND ""
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/utils
-  BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/utils_build
-  TMP_DIR ${CMAKE_CURRENT_BINARY_DIR}/utils_tmp
-  CMAKE_CACHE_ARGS -DDICE_TRILINOS_DIR:STRING=${DICE_TRILINOS_DIR} -DCMAKE_INSTALL_PREFIX:FILEPATH=${CMAKE_INSTALL_PREFIX} -DDICE_ENABLE_NETCDF:STRING=${DICE_ENABLE_NETCDF} -DNetCDF_DIR:STRING=${NetCDF_DIR} -DHDF5_DIR:STRING=${HDF5_DIR} -DDICE_DEBUG_MSG:BOOL=${DICE_DEBUG_MSG} -DCLAPACK_DIR:FILEPATH=${CLAPACK_DIR} -DOpenCV_DIR:STRING=${OpenCV_DIR} -DDICE_USE_DOUBLE:BOOL=${DICE_USE_DOUBLE} -DDICE_OUTPUT_PREFIX:FILEPATH=${DICE_OUTPUT_PREFIX} -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE} -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER} -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER} -DCMAKE_CXX_FLAGS:STRING=${CMAKE_CXX_FLAGS} -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS}
-  )
+MESSAGE(STATUS "Configuring hypercine")
+SET(HYPERCINE_CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX} -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE} -DHYPERCINE_DEBUG_MSG:BOOL=${DICE_DEBUG_MSG} -DOpenCV_DIR:PATH=${OpenCV_DIR})
+# base data type:
+if(DICE_USE_INT_STORAGE)
+  SET(HYPERCINE_CMAKE_ARGS ${HYPERCINE_CMAKE_ARGS} -DHYPERCINE_USE_INT_STORAGE:BOOL=ON)
+  ADD_DEFINITIONS(-DUSE_INT_STORAGE=1)
+elseif(DICE_USE_DOUBLE)
+  SET(HYPERCINE_CMAKE_ARGS ${HYPERCINE_CMAKE_ARGS} -DHYPERCINE_USE_DOUBLE_STORAGE:BOOL=ON)
+  ADD_DEFINITIONS(-DUSE_DOUBLE_STORAGE=1)
+else()
+  SET(HYPERCINE_CMAKE_ARGS ${HYPERCINE_CMAKE_ARGS} -DHYPERCINE_USE_FLOAT_STORAGE:BOOL=ON)
+  ADD_DEFINITIONS(-DUSE_FLOAT_STORAGE=1)
+endif()
+ExternalProject_Add(hypercine
+  GIT_REPOSITORY git://github.com/dicengine/hypercine.git
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/hypercine
+  CMAKE_ARGS ${HYPERCINE_CMAKE_ARGS}
+)
 
 # base data type:
 if(DICE_USE_DOUBLE)
   ADD_DEFINITIONS(-DDICE_USE_DOUBLE=1)
-  MESSAGE(STATUS "Image intensity and scalar type will be: DOUBLE")
+  MESSAGE(STATUS "Scalar type will be: DOUBLE")
 else()
-  MESSAGE(STATUS "Image intensity and scalar type will be: FLOAT (default)")
+  MESSAGE(STATUS "Scalar type will be: FLOAT (default)")
+endif()
+if(DICE_USE_INT_STORAGE)
+  ADD_DEFINITIONS(-DDICE_USE_INT_STORAGE=1)
+  MESSAGE(STATUS "Image intensity storage type will be: INT")
+else()
+  IF(DICE_USE_DOUBLE)
+    MESSAGE(STATUS "Image intensity storage type will be: DOUBLE")
+  ELSE()
+    MESSAGE(STATUS "Image intensity storage type will be: FLOAT (default)")
+  ENDIF()
 endif()
 
 # MPI check -- defaults to TRUE
@@ -209,17 +231,31 @@ SET(DICE_TRILINOS_LIB_DIRS
     ${Trilinos_TPL_LIBRARY_DIRS}
   )
 
-link_directories(${DICE_TRILINOS_LIB_DIRS}
-  ${CMAKE_INSTALL_PREFIX}/lib)
+link_directories(${DICE_TRILINOS_LIB_DIRS})
+
+ExternalProject_Get_Property(hypercine source_dir)
+include_directories(${source_dir}/src)
+set(libprefix "lib")
+set(libsuffix ".a")
+if(WIN32)
+  set(libprefix "")
+  set(libsuffix ".lib")
+endif()
+set(DICE_LIBRARIES ${DICE_LIBRARIES} "${libprefix}hypercine${libsuffix}")
+set(DICE_UTILS_LIBRARIES ${DICE_UTILS_LIBRARIES} "${libprefix}hypercine${libsuffix}")
+link_directories(${CMAKE_INSTALL_PREFIX}/lib)
+if(WIN32)
+link_directories(${CMAKE_INSTALL_PREFIX}/bin)
+endif()
 
 SET(DICE_HEADER_DIRS
   ${CMAKE_CURRENT_SOURCE_DIR}/src/api
   ${CMAKE_CURRENT_SOURCE_DIR}/src/base
   ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/cine
   ${CMAKE_CURRENT_SOURCE_DIR}/src/netcdf
   ${CMAKE_CURRENT_SOURCE_DIR}/src/fft
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/ioutils
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/rawi
   ${CMAKE_CURRENT_SOURCE_DIR}/src/kdtree
   ${CMAKE_CURRENT_SOURCE_DIR}/src/mesh
   )
@@ -230,6 +266,7 @@ IF(DEFINED TRACKLIB_DIR)
   )
 ENDIF()
 
+MESSAGE(STATUS "DICE_ENABLE_GLOBAL: ${DICE_ENABLE_GLOBAL}")
 IF(DICE_ENABLE_GLOBAL)
   IF(NOT DICE_USE_DOUBLE)
       MESSAGE(FATAL_ERROR "DICE_ENABLE_GLOBAL can only be used with DICE_USE_DOUBLE=ON")
@@ -258,19 +295,6 @@ SET(DICE_LIBRARIES
     teuchoscomm
     teuchosparameterlist
  )
-
-# enable tpetra if chosen:
-IF(DICE_ENABLE_MANYCORE)
-  MESSAGE(STATUS "** MANYCORE enabled (uses Tpetra and Kokkos libraries) **")
-  SET(DICE_LIBRARIES
-    ${DICE_LIBRARIES}
-    kokkoscore
-    tpetra
-  )
-  ADD_DEFINITIONS(-DDICE_KOKKOS=1 -DDICE_TPETRA=1)
-ELSE()
-  MESSAGE(STATUS "MANYCORE disabled")
-ENDIF()
 
 IF(DICE_ENABLE_GLOBAL)
   MESSAGE(STATUS "*** Enabling Global DIC (requires the Tpetra (or Epetra), Seacas libraries, and Belos in Trilinos) ***")

@@ -59,9 +59,6 @@
 
 namespace DICe {
 
-// forward declaration of an Image
-class Image;
-
 // input parameter names
 // using globals here to avoid misspellings
 /// Input parameter, location to place the output files
@@ -141,6 +138,8 @@ const char* const cine_file = "cine_file";
 const char* const cine_ref_index = "cine_ref_index";
 /// Input parameter
 const char* const cine_start_index = "cine_start_index";
+/// Input parameter
+const char* const cine_preview_index = "cine_preview_index";
 /// Input parameter
 const char* const cine_end_index = "cine_end_index";
 /// Input parameter

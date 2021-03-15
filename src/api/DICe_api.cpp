@@ -50,8 +50,8 @@ extern "C" {
 
 DICE_LIB_DLL_EXPORT const int_t dice_correlate(scalar_t points[], int_t n_points,
                         int_t subset_size,
-                        intensity_t ref_img[], int_t ref_w, int_t ref_h,
-                        intensity_t def_img[], int_t def_w, int_t def_h,
+                        storage_t ref_img[], int_t ref_w, int_t ref_h,
+                        storage_t def_img[], int_t def_w, int_t def_h,
                         Teuchos::ParameterList * input_params, const bool update_params){
 
   static bool initialized = false;
@@ -76,8 +76,8 @@ DICE_LIB_DLL_EXPORT const int_t dice_correlate(scalar_t points[], int_t n_points
   const int_t imgSize = ref_w*ref_h;
 
   // create an ArrayRCP to the image
-  Teuchos::ArrayRCP<intensity_t> refRCP(ref_img,0,imgSize,false);
-  Teuchos::ArrayRCP<intensity_t> defRCP(def_img,0,imgSize,false);
+  Teuchos::ArrayRCP<storage_t> refRCP(ref_img,0,imgSize,false);
+  Teuchos::ArrayRCP<storage_t> defRCP(def_img,0,imgSize,false);
 
   static Teuchos::RCP<Teuchos::ParameterList> params;
   if(input_params!=0){
@@ -153,8 +153,8 @@ DICE_LIB_DLL_EXPORT const int_t dice_correlate(scalar_t points[], int_t n_points
 }
 
 DICE_LIB_DLL_EXPORT const int_t dice_correlate_conformal(scalar_t points[],
-                        intensity_t ref_img[], int_t ref_w, int_t ref_h,
-                        intensity_t def_img[], int_t def_w, int_t def_h,
+                        storage_t ref_img[], int_t ref_w, int_t ref_h,
+                        storage_t def_img[], int_t def_w, int_t def_h,
                         const char* subset_file, const char* param_file,
                         const bool write_output){
 
@@ -194,8 +194,8 @@ DICE_LIB_DLL_EXPORT const int_t dice_correlate_conformal(scalar_t points[],
   const int_t imgSize = ref_w*ref_h;
 
   // create an ArrayRCP to the image
-  Teuchos::ArrayRCP<intensity_t> refRCP(ref_img,0,imgSize,false);
-  Teuchos::ArrayRCP<intensity_t> defRCP(def_img,0,imgSize,false);
+  Teuchos::ArrayRCP<storage_t> refRCP(ref_img,0,imgSize,false);
+  Teuchos::ArrayRCP<storage_t> defRCP(def_img,0,imgSize,false);
 
   // construct a schema:
   // make it static since we want the internal data to hang around

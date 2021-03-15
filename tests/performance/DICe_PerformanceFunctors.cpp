@@ -86,11 +86,11 @@ int main(int argc, char *argv[]) {
 
   // optional argument for the number of thread teams:
 
-  int_t num_thread_teams = -1;
-  if(argc>3) num_thread_teams = std::strtol(argv[3],NULL,0);
-  *outStream << "number of thread teams:   " << num_thread_teams << " (-1 means thread teams not used)" << std::endl;
-  const bool use_hierarchical = num_thread_teams > 0;
-  *outStream << "hierarchical parallelism: " << use_hierarchical << std::endl;
+//  int_t num_thread_teams = -1;
+//  if(argc>3) num_thread_teams = std::strtol(argv[3],NULL,0);
+//  *outStream << "number of thread teams:   " << num_thread_teams << " (-1 means thread teams not used)" << std::endl;
+//  const bool use_hierarchical = num_thread_teams > 0;
+//  *outStream << "hierarchical parallelism: " << use_hierarchical << std::endl;
 
   // create a vector of image sizes to use
   int_t width = 0;
@@ -130,7 +130,7 @@ int main(int argc, char *argv[]) {
   std::vector<scalar_t> sub_keys_times(num_img_sizes,0.0);
   std::vector<scalar_t> mean_times(num_img_sizes,0.0);
   std::vector<scalar_t> corr_times(num_img_sizes,0.0);
-
+  Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
 
   // num timing samples loop
   for(int_t time_sample=0;time_sample<num_time_samples;++time_sample){
@@ -139,6 +139,9 @@ int main(int argc, char *argv[]) {
     for(int_t size_it=0;size_it<num_img_sizes;++size_it){
       const int_t w_it = widths[size_it];
       const int_t h_it = heights[size_it];
+      imgParams->set(DICe::subimage_width,w_it);
+      imgParams->set(DICe::subimage_height,h_it);
+
       *outStream << "---------------------------------------------------------------------------" << std::endl;
       *outStream << "image size: " << w_it << " x " << h_it << std::endl;
       if(time_sample==0) sizes[size_it] = w_it*h_it;
@@ -148,31 +151,31 @@ int main(int argc, char *argv[]) {
       *outStream << "reading the image" << std::endl;
       {
         Teuchos::TimeMonitor read_time_monitor(*read_time);
-        img = Teuchos::rcp(new Image(file_name.c_str(),0,0,w_it,h_it));
+        img = Teuchos::rcp(new Image(file_name.c_str(),imgParams));
       }
 
       // gradient
       *outStream << "computing the image gradients" << std::endl;
       {
         Teuchos::TimeMonitor grad_time_monitor(*grad_time);
-        if(use_hierarchical){
-          img->compute_gradients(true,num_thread_teams);
-        }
-        else{
+//        if(use_hierarchical){
+//          img->compute_gradients(true,num_thread_teams);
+//        }
+//        else{
           img->compute_gradients();
-        }
+//        }
       }
 
       // image filter
       *outStream << "computing convolution filter" << std::endl;
       {
         Teuchos::TimeMonitor filter_time_monitor(*filter_time);
-        if(use_hierarchical){
-          img->gauss_filter(true,num_thread_teams);
-        }
-        else{
+//        if(use_hierarchical){
+//          img->gauss_filter(true,num_thread_teams);
+//        }
+//        else{
           img->gauss_filter();
-        }
+//        }
       }
 
       // create a subset

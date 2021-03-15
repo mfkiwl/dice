@@ -67,9 +67,10 @@ complex_divide(kiss_fft_cpx * lhs,
 /// \param complex [out] the imaginary part of the FFT
 /// \param inverse 1 if this should be an inverse FFT (back to time domain)
 /// \param hamming_filter true if a hamming filter should be applied to the image
+template <typename S>
 DICE_LIB_DLL_EXPORT
 void
-image_fft(Teuchos::RCP<Image> image,
+image_fft(Teuchos::RCP<Image_<S>> image,
   Teuchos::ArrayRCP<scalar_t> & real,
   Teuchos::ArrayRCP<scalar_t> & complex,
   const int_t inverse = 0,
@@ -85,9 +86,11 @@ image_fft(Teuchos::RCP<Image> image,
 /// \param scale_factor used if the log is applied i = scale_factor*log(i+1)
 /// \param shift true if the quandrants of the fft image should be swapped
 /// \param high_pass_filter true if the values should be filtered
+
+template <typename S>
 DICE_LIB_DLL_EXPORT
-Teuchos::RCP<Image>
-image_fft(Teuchos::RCP<Image> image,
+Teuchos::RCP<Image_<S>>
+image_fft(Teuchos::RCP<Image_<S>> image,
   const bool hamming_filter=true,
   const bool apply_log=true,
   const scalar_t scale_factor=100.0,
@@ -104,10 +107,11 @@ image_fft(Teuchos::RCP<Image> image,
 /// \param u_y [out] displacement y
 /// \param convert_to_r_theta true if the images are polar transforms and
 /// the correlation is for radius and angle of rotation
+template <typename S>
 DICE_LIB_DLL_EXPORT
 scalar_t
-phase_correlate_x_y(Teuchos::RCP<Image> image_a,
-  Teuchos::RCP<Image> image_b,
+phase_correlate_x_y(Teuchos::RCP<Image_<S>> image_a,
+  Teuchos::RCP<Image_<S>> image_b,
   scalar_t & u_x,
   scalar_t & u_y,
   const bool convert_to_r_theta=false);
@@ -133,9 +137,10 @@ phase_correlate_row(Teuchos::RCP<Image> image_a,
 /// \param high_pass_filter true if the radius of the polar transform
 /// should be limited to w/4 since the rest of the image would be zero from filtering
 /// so the output image will be twice as tall as the input
+template <typename S>
 DICE_LIB_DLL_EXPORT
-Teuchos::RCP<Image>
-polar_transform(Teuchos::RCP<Image> image,
+Teuchos::RCP<Image_<S>>
+polar_transform(Teuchos::RCP<Image_<S>> image,
   const bool high_pass_filter = false);
 
 /// 2 dimensional FFT of an array

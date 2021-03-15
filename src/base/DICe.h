@@ -45,6 +45,8 @@
 #define DICE_PI 3.14159265358979323846
 #define DICE_TWOPI 6.28318530717958647692
 
+#define CINE_BUFFER_NUM_FRAMES 500 // TODO make this an input param and try different defaults
+
 #if defined(WIN32)
 // disable some common windows compiler warnings that we don't really care about
 #pragma warning(disable:4005)
@@ -71,6 +73,10 @@
 #else
 #  define DEBUG_MSG(x) do {} while (0)
 #endif
+// buffer output macros (for interfacing with javascript):
+#define BUFFER_MSG(var,val) do { std::cout << "[--BUFFER_OUT--]: " << var <<  " " << val << std::endl; } while (0)
+
+//#define SAME_TYPES(T1, T2) _Generic((  (T1){0}  ),T2: 1,default: 0)
 
 #define VERSION "v2.0"
 #ifndef GITSHA1
@@ -89,32 +95,39 @@ namespace DICe{
 /// basic types
 
 #if DICE_USE_DOUBLE
-  /// image intensity type
-  typedef double intensity_t;
   /// generic scalar type
   typedef double scalar_t;
+  #define PRECISION_SCALAR_SAME_TYPE
 #else
-  /// image intensity type
-  typedef float intensity_t;
   /// generic scalar type
   typedef float scalar_t;
+#endif
+
+#if DICE_USE_INT_STORAGE
+  typedef uint16_t storage_t;
+#else
+  typedef scalar_t storage_t;
+  #define STORAGE_SCALAR_SAME_TYPE
 #endif
 
 /// integer type
 typedef int int_t;
 
+/// precision type (used mostly in the global code since single precision causes convergence issues)
+typedef double precision_t;
+
 /// Print the executable information banner
 DICE_LIB_DLL_EXPORT
 void print_banner();
 
-/// Initialization function (mpi and kokkos if enabled):
+/// Initialization function (mpi if enabled):
 /// \param argc argument count
 /// \param argv array of argument chars
 DICE_LIB_DLL_EXPORT
 void initialize(int argc,
   char *argv[]);
 
-/// Finalize function (mpi and kokkos if enabled):
+/// Finalize function (mpi if enabled):
 DICE_LIB_DLL_EXPORT
 void finalize();
 
@@ -129,18 +142,10 @@ void safe_buffer_copy(char * input, char * output);
 
 /// parameters (all lower case)
 
-/// String parameter names using globals to prevent misspelling in the parameter lists:
-const char* const image_grad_use_hierarchical_parallelism = "image_grad_use_hierarchical_parallelism";
-/// String parameter name
-const char* const image_grad_team_size = "image_grad_team_size";
 /// String parameter name
 const char* const gauss_filter_images = "gauss_filter_images";
 /// String parameter name
 const char* const time_average_cine_ref_frame = "time_average_cine_ref_frame";
-/// String parameter name
-const char* const gauss_filter_use_hierarchical_parallelism = "gauss_filter_use_hierarchical_parallelism";
-/// String parameter name
-const char* const gauss_filter_team_size = "gauss_filter_team_size";
 /// String parameter name
 const char* const gauss_filter_mask_size = "gauss_filter_mask_size";
 /// String parameter name
@@ -173,6 +178,8 @@ const char* const compute_def_gradients = "compute_def_gradients";
 const char* const compute_image_gradients = "compute_image_gradients";
 /// String parameter name
 const char* const filter_failed_cine_pixels = "filter_failed_cine_pixels";
+/// String parameter name
+const char* const buffer_persistence_guaranteed = "buffer_persistence_guaranteed";
 /// String parameter name
 const char* const remove_outlier_pixels = "remove_outlier_pixels";
 /// String parameter name
@@ -311,6 +318,8 @@ const char* const use_incremental_formulation = "use_incremental_formulation";
 const char* const use_nonlinear_projection = "use_nonlinear_projection";
 /// String parameter name
 const char* const sort_txt_output = "sort_txt_output";
+/// String parameter name
+const char* const write_json_output = "write_json_output";
 /// String parameter name, only for global DIC
 const char* const global_solver = "global_solver";
 /// String parameter name, only for global DIC
@@ -821,26 +830,6 @@ const Correlation_Parameter rotate_def_image_270_param(rotate_def_image_270,
   true,
   "True if deformed image(s) should be rotated 270 degrees.");
 /// Correlation parameter and properties
-const Correlation_Parameter image_grad_use_hierarchical_parallelism_param(image_grad_use_hierarchical_parallelism,
-  BOOL_PARAM,
-  true,
-  "True if higherarchical parallelism should be used when computing image gradients (parallel in x and y)");
-/// Correlation parameter and properties
-const Correlation_Parameter image_grad_team_size_param(image_grad_team_size,
-  SIZE_PARAM,
-  true,
-  "The team size to use for thread teams when computing image gradients.");
-/// Correlation parameter and properties
-const Correlation_Parameter gauss_filter_use_hierarchical_parallelism_param(gauss_filter_use_hierarchical_parallelism,
-  BOOL_PARAM,
-  true,
-  "True if higherarchical parallelism should be used when computing image Gaussian filter (parallel in x and y)");
-/// Correlation parameter and properties
-const Correlation_Parameter gauss_filter_team_size_param(gauss_filter_team_size,
-  SIZE_PARAM,
-  true,
-  "The team size to use for thread teams when computing Gaussian filter.");
-/// Correlation parameter and properties
 const Correlation_Parameter gauss_filter_mask_size_param(gauss_filter_mask_size,
   SIZE_PARAM,
   true,
@@ -938,6 +927,11 @@ const Correlation_Parameter sort_txt_output_param(sort_txt_output,
   BOOL_PARAM,
   true,
   "Sort the text output file according to the subset location in x then y for the full field results");
+/// Correlation parameter and properties
+const Correlation_Parameter write_json_output_param(write_json_output,
+  BOOL_PARAM,
+  true,
+  "Write the json output files for the GUI to use");
 /// Correlation parameter and properties
 const Correlation_Parameter output_delimiter_param(output_delimiter,
   STRING_PARAM,
@@ -1252,6 +1246,11 @@ const Correlation_Parameter filter_failed_cine_pixels_param(filter_failed_cine_p
   false,
   "Filter out any pixels that failed during cine acquisition");
 /// Correlation parameter and properties
+const Correlation_Parameter convert_cine_to_8_bit_param(convert_cine_to_8_bit,
+  BOOL_PARAM,
+  false,
+  "Convert the pixel intensity range to 8 bits (0-255)");
+/// Correlation parameter and properties
 const Correlation_Parameter remove_outlier_pixels_param(remove_outlier_pixels,
   BOOL_PARAM,
   false,
@@ -1261,7 +1260,7 @@ const Correlation_Parameter remove_outlier_pixels_param(remove_outlier_pixels,
 // TODO don't forget to update this when adding a new one
 /// The total number of valid correlation parameters
 /// Vector of valid parameter names
-const int_t num_valid_correlation_params = 90;
+const int_t num_valid_correlation_params = 88;
 /// Vector oIf valid parameter names
 const Correlation_Parameter valid_correlation_params[num_valid_correlation_params] = {
   correlation_routine_param,
@@ -1320,6 +1319,7 @@ const Correlation_Parameter valid_correlation_params[num_valid_correlation_param
   use_incremental_formulation_param,
   use_nonlinear_projection_param,
   sort_txt_output_param,
+  write_json_output_param,
   use_search_initialization_for_failed_steps_param,
   use_tracking_default_params_param,
   override_force_simplex_param,
@@ -1328,10 +1328,6 @@ const Correlation_Parameter valid_correlation_params[num_valid_correlation_param
   use_constrained_opt_dic_param,
   use_integrated_dic_param,
   pixel_integration_order_param,
-  image_grad_use_hierarchical_parallelism_param,
-  image_grad_team_size_param,
-  gauss_filter_use_hierarchical_parallelism_param,
-  gauss_filter_team_size_param,
   gauss_filter_mask_size_param,
   rotate_ref_image_90_param,
   rotate_def_image_90_param,
@@ -1341,6 +1337,7 @@ const Correlation_Parameter valid_correlation_params[num_valid_correlation_param
   rotate_def_image_270_param,
   levenberg_marquardt_regularization_factor_param,
   filter_failed_cine_pixels_param,
+  convert_cine_to_8_bit_param,
   remove_outlier_pixels_param,
   time_average_cine_ref_frame_param,
   global_regularization_alpha_param,
@@ -1358,7 +1355,7 @@ const Correlation_Parameter valid_correlation_params[num_valid_correlation_param
 
 // TODO don't forget to update this when adding a new one
 /// The total number of valid correlation parameters
-const int_t num_valid_global_correlation_params = 31;
+const int_t num_valid_global_correlation_params = 32;
 /// Vector of valid parameter names
 const Correlation_Parameter valid_global_correlation_params[num_valid_global_correlation_params] = {
   use_global_dic_param,
@@ -1383,6 +1380,7 @@ const Correlation_Parameter valid_global_correlation_params[num_valid_global_cor
   use_incremental_formulation_param,
   use_nonlinear_projection_param,
   sort_txt_output_param,
+  write_json_output_param,
   global_regularization_alpha_param,
   global_stabilization_tau_param,
   global_formulation_param,

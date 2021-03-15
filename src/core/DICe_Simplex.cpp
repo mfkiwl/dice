@@ -354,8 +354,8 @@ Homography_Simplex::objective(Teuchos::RCP<std::vector<scalar_t> > variables){
   scalar_t value = 0.0;
   scalar_t xr = 0.0;
   scalar_t yr = 0.0;
-  intensity_t left_intens = 0.0;
-  intensity_t right_intens = 0.0;
+  scalar_t left_intens = 0.0;
+  scalar_t right_intens = 0.0;
   for(int_t j=0.1*h;j<0.9*h;++j){
     for(int_t i=0.1*w;i<0.9*w;++i){
       tri_->project_left_to_right_sensor_coords(i,j,xr,yr);
@@ -394,8 +394,8 @@ Affine_Homography_Simplex::objective(Teuchos::RCP<std::vector<scalar_t> > variab
   scalar_t value = 0.0;
   scalar_t xr = 0.0;
   scalar_t yr = 0.0;
-  intensity_t left_intens = 0.0;
-  intensity_t right_intens = 0.0;
+  scalar_t left_intens = 0.0;
+  scalar_t right_intens = 0.0;
   for(int_t j=0.1*h;j<0.9*h;++j){
     for(int_t i=0.1*w;i<0.9*w;++i){
       tri_->project_left_to_right_sensor_coords(i,j,xr,yr);
@@ -437,8 +437,8 @@ Quadratic_Homography_Simplex::objective(Teuchos::RCP<std::vector<scalar_t> > var
 
   scalar_t value = 0.0;
   scalar_t xr=0.0,yr=0.0,xl=0.0,yl=0.0;
-  intensity_t left_intens = 0.0;
-  intensity_t right_intens = 0.0;
+  scalar_t left_intens = 0.0;
+  scalar_t right_intens = 0.0;
   for(int_t j=uly_;j<=lry_;++j){
     yl = (scalar_t)j;
     for(int_t i=ulx_;i<=lrx_;++i){
@@ -509,8 +509,8 @@ Warp_Simplex::objective(Teuchos::RCP<std::vector<scalar_t> > variables){
   scalar_t value = 0.0;
   scalar_t xr = 0.0;
   scalar_t yr = 0.0;
-  intensity_t left_intens = 0.0;
-  intensity_t right_intens = 0.0;
+  scalar_t left_intens = 0.0;
+  scalar_t right_intens = 0.0;
   for(int_t j=0.1*h;j<0.9*h;++j){
     for(int_t i=0.1*w;i<0.9*w;++i){
       tri_->project_left_to_right_sensor_coords(i,j,xr,yr);

@@ -40,7 +40,6 @@
 // @HEADER
 #include <DICe.h>
 #include <DICe_Image.h>
-#include <DICe_Cine.h>
 #include <DICe_ImageIO.h>
 
 #include <Teuchos_RCP.hpp>
@@ -92,25 +91,25 @@ int main(int argc, char *argv[]) {
     full_name << "./images/" << cine_files[i] << ".cine";
     *outStream << "testing cine file: " << full_name.str() << std::endl;
 
-    DICe::cine::Cine_Reader cine_reader(full_name.str(),outStream.getRawPtr());
-    if(cine_reader.num_frames()!=6){
-      *outStream << "Error, the number of frames is not correct, should be 6 is " << cine_reader.num_frames() << std::endl;
+    Teuchos::RCP<hypercine::HyperCine> hc = DICe::utils::HyperCine_Singleton::instance().hypercine(full_name.str());
+    if(hc->file_frame_count()!=6){
+      *outStream << "Error, the number of frames is not correct, should be 6 is " << hc->file_frame_count() << std::endl;
       errorFlag++;
     }
-    if(cine_reader.height()!=128){
-      *outStream << "Error, the image height is not correct. Should be 128 and is" << cine_reader.height() << std::endl;
+    if(hc->height()!=128){
+      *outStream << "Error, the image height is not correct. Should be 128 and is" << hc->height() << std::endl;
       errorFlag++;
     }
-    if(cine_reader.width()!=256){
-      *outStream << "Error, the image width is not correct. Should be 256 and is " << cine_reader.width() << std::endl;
+    if(hc->width()!=256){
+      *outStream << "Error, the image width is not correct. Should be 256 and is " << hc->width() << std::endl;
       errorFlag++;
     }
     *outStream << "image dimensions have been checked" << std::endl;
 
-    for(int_t frame=0;frame<cine_reader.num_frames();++frame){
+    for(int_t frame=0;frame<hc->file_frame_count();++frame){
       std::stringstream markup_name;
-      markup_name << "./images/" << cine_files[i] << "_" << frame + cine_reader.first_image_number() << ".cine";
-      *outStream << "testing frame " << frame << std::endl;
+      markup_name << "./images/" << cine_files[i] << "_" << frame + hc->file_first_frame_id() << ".cine";
+      *outStream << "testing frame " << frame << " " << markup_name.str() << std::endl;
        Teuchos::RCP<Image> cine_img = Teuchos::rcp(new Image(markup_name.str().c_str(),params));
       std::stringstream name;
       //std::stringstream outname;
@@ -124,12 +123,14 @@ int main(int argc, char *argv[]) {
 #else
       name << "./images/" << cine_files[i]<< "_" << frame << ".rawi";
 #endif
-      Image cine_img_exact(name.str().c_str());
+      Scalar_Image cine_img_exact(name.str().c_str());
+      //cine_img_exact.write("CINE_IMG_EXACT.png");
+      //cine_img->write("CINE_IMG.png");
       bool intensity_value_error = false;
-      for(int_t y=0;y<cine_reader.height();++y){
-        for(int_t x=0;x<cine_reader.width();++x){
-          if(std::abs((*cine_img)(x,y)-cine_img_exact(x,y)) > 0.5){
-            std::cout << x << " " << y << " actual " << (*cine_img)(x,y) << " exptected " << cine_img_exact(x,y) << std::endl;
+      for(int_t y=0;y<hc->height();++y){
+        for(int_t x=0;x<hc->width();++x){
+          if(std::abs((*cine_img)(x,y)-cine_img_exact(x,y)) > 1.0){
+            *outStream << x << " " << y << " actual " << (*cine_img)(x,y) << " exptected " << cine_img_exact(x,y) << std::endl;
             intensity_value_error=true;
           }
         }
@@ -146,7 +147,7 @@ int main(int argc, char *argv[]) {
 
   bool exception_thrown = false;
   try{
-    DICe::cine::Cine_Reader cine_reader("./images/invalid_color.cine",outStream.getRawPtr());
+    Teuchos::RCP<hypercine::HyperCine> invalid_color = DICe::utils::HyperCine_Singleton::instance().hypercine("./images/invalid_color.cine");
   }
   catch(...){
     exception_thrown = true;
@@ -173,16 +174,25 @@ int main(int argc, char *argv[]) {
   }
 
   *outStream << "testing reading a set of sub regions from a 10 bit cine " << std::endl;
-  DICe::cine::Cine_Reader cine_reader("./images/packed_12bpp.cine",outStream.getRawPtr());
+
+  Teuchos::RCP<hypercine::HyperCine> hc2 = DICe::utils::HyperCine_Singleton::instance().hypercine("./images/packed_12bpp.cine");
   std::stringstream win_frame;
-  win_frame << "./images/packed_12bpp_" << cine_reader.first_image_number() << ".cine";
+  win_frame << "./images/packed_12bpp_" << hc2->file_first_frame_id() << ".cine";
   Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
   imgParams->set(DICe::filter_failed_cine_pixels,false);
   imgParams->set(DICe::convert_cine_to_8_bit,false);
   imgParams->set(DICe::reinitialize_cine_reader_conversion_factor,true);
-  Teuchos::RCP<Image> image_0_rcp = Teuchos::rcp(new Image(win_frame.str().c_str(),170,13,208-170+1,42-13+1,imgParams));
+  imgParams->set(DICe::subimage_width,208-170+1);
+  imgParams->set(DICe::subimage_height,42-13+1);
+  imgParams->set(DICe::subimage_offset_x,170);
+  imgParams->set(DICe::subimage_offset_y,13);
+  Teuchos::RCP<Image> image_0_rcp = Teuchos::rcp(new Image(win_frame.str().c_str(),imgParams));
   //image_0_rcp->write("motion_window_12bpp.tif");
-  Teuchos::RCP<Image> image_1_rcp = Teuchos::rcp(new Image(win_frame.str().c_str(),196,72,238-196+1,95-72+1,imgParams));
+  imgParams->set(DICe::subimage_width,238-196+1);
+  imgParams->set(DICe::subimage_height,95-72+1);
+  imgParams->set(DICe::subimage_offset_x,196);
+  imgParams->set(DICe::subimage_offset_y,72);
+  Teuchos::RCP<Image> image_1_rcp = Teuchos::rcp(new Image(win_frame.str().c_str(),imgParams));
   //image_1_rcp->write("motion_window_12bpp.tif");
   std::vector<Teuchos::RCP<Image> > image_rcps;
   image_rcps.push_back(image_0_rcp);
@@ -195,13 +205,12 @@ int main(int argc, char *argv[]) {
 #else
     name << "./images/motion_window_" << i << ".rawi";
 #endif
-    Image cine_img_exact(name.str().c_str());
-    //cine_img_exact.write("motion_window_12bpp_exact.tif");
+    Scalar_Image cine_img_exact(name.str().c_str());
     bool intensity_value_error = false;
     for(int_t y=0;y<cine_img_exact.height();++y){
       for(int_t x=0;x<cine_img_exact.width();++x){
         if(std::abs((* image_rcps[i])(x,y)-cine_img_exact(x,y)) > 0.05){
-          std::cout << x << " " << y << " actual " << (* image_rcps[i])(x,y) << " exptected " << cine_img_exact(x,y) << std::endl;
+          *outStream << x << " " << y << " actual " << (* image_rcps[i])(x,y) << " exptected " << cine_img_exact(x,y) << std::endl;
           intensity_value_error=true;
         }
       }
@@ -214,23 +223,27 @@ int main(int argc, char *argv[]) {
   *outStream << "motion window values have been checked" << std::endl;
 
   *outStream << "testing reading a set of sub regions from an 8 bit cine " << std::endl;
-  DICe::cine::Cine_Reader cine_reader_8("./images/phantom_v1610.cine",outStream.getRawPtr());
-  const int_t frame_5_index = 5 + cine_reader_8.first_image_number();
+  Teuchos::RCP<hypercine::HyperCine> hc8 = DICe::utils::HyperCine_Singleton::instance().hypercine("./images/phantom_v1610.cine");
+  const int_t frame_5_index = 5 + hc8->file_first_frame_id();
   std::stringstream file_name_8;
   file_name_8 << "./images/phantom_v1610_" << frame_5_index << ".cine";
-  Teuchos::RCP<Image> image_8 = Teuchos::rcp(new Image(file_name_8.str().c_str(),158,15,196-158+1,45-15+1,imgParams));
+  imgParams->set(DICe::subimage_width,196-158+1);
+  imgParams->set(DICe::subimage_height,45-15+1);
+  imgParams->set(DICe::subimage_offset_x,158);
+  imgParams->set(DICe::subimage_offset_y,15);
+  Teuchos::RCP<Image> image_8 = Teuchos::rcp(new Image(file_name_8.str().c_str(),imgParams));
   //image_8->write("motion_window_8.tif");
   bool intensity_value_error = false;
 #if DICE_USE_DOUBLE
-    Image img_8_exact("./images/motion_window_d_8.rawi");
+    Scalar_Image img_8_exact("./images/motion_window_d_8.rawi");
 #else
-    Image img_8_exact("./images/motion_window_8.rawi");
+    Scalar_Image img_8_exact("./images/motion_window_8.rawi");
 #endif
   //img_8_exact.write("motion_window_8_exact.tif");
   for(int_t y=0;y<image_8->height();++y){
     for(int_t x=0;x<image_8->width();++x){
       if(std::abs((*image_8)(x,y)-img_8_exact(x,y)) > 0.05){
-        std::cout << x << " " << y << " " << std::abs((*image_8)(x,y)-img_8_exact(x,y)) <<std::endl;
+        *outStream << x << " " << y << " " << std::abs((*image_8)(x,y)-img_8_exact(x,y)) <<std::endl;
         intensity_value_error=true;
       }
     }
@@ -242,16 +255,20 @@ int main(int argc, char *argv[]) {
   *outStream << "8 bit motion window values have been checked" << std::endl;
 
   *outStream << "testing reading a set of sub regions from an 16 bit cine " << std::endl;
-  DICe::cine::Cine_Reader cine_reader_16("./images/phantom_v1610_16bpp.cine",outStream.getRawPtr());
+  Teuchos::RCP<hypercine::HyperCine> hc16 = DICe::utils::HyperCine_Singleton::instance().hypercine("./images/phantom_v1610_16bpp.cine");
   std::stringstream file_name_16;
-  file_name_16 << "./images/phantom_v1610_16bpp_" << 5 + cine_reader_16.first_image_number() << ".cine";
-  Teuchos::RCP<Image> image_16 = Teuchos::rcp(new Image(file_name_16.str().c_str(),95,83,128-95+1,116-83+1,imgParams));
+  file_name_16 << "./images/phantom_v1610_16bpp_" << 5 + hc16->file_first_frame_id() << ".cine";
+  imgParams->set(DICe::subimage_width,128-95+1);
+  imgParams->set(DICe::subimage_height,116-83+1);
+  imgParams->set(DICe::subimage_offset_x,95);
+  imgParams->set(DICe::subimage_offset_y,83);
+  Teuchos::RCP<Image> image_16 = Teuchos::rcp(new Image(file_name_16.str().c_str(),imgParams));
   //image_16->write("motion_window_d_16.rawi");
   intensity_value_error = false;
 #if DICE_USE_DOUBLE
-    Image img_16_exact("./images/motion_window_d_16.rawi");
+    Scalar_Image img_16_exact("./images/motion_window_d_16.rawi");
 #else
-    Image img_16_exact("./images/motion_window_16.rawi");
+    Scalar_Image img_16_exact("./images/motion_window_16.rawi");
 #endif
   for(int_t y=0;y<image_16->height();++y){
     for(int_t x=0;x<image_16->width();++x){
@@ -303,16 +320,16 @@ int main(int argc, char *argv[]) {
   }
 
 #if DICE_USE_DOUBLE
-  // try creating a cine image using the standard image interface without a reader constructed manually:
-  Teuchos::RCP<DICe::Image> img_cine_0 = Teuchos::rcp(new Image("./images/phantom_v1610_16bpp_-85.cine",params));
-  Teuchos::RCP<DICe::Image> img_cine_0_gold = Teuchos::rcp(new Image("./images/image_cine_-85.rawi"));
+  Teuchos::RCP<DICe::Scalar_Image> img_cine_0 = Teuchos::rcp(new Scalar_Image("./images/phantom_v1610_16bpp_-85.cine",params));
+  Teuchos::RCP<DICe::Scalar_Image> img_cine_0_gold = Teuchos::rcp(new Scalar_Image("./images/image_cine_-85.rawi"));
   //const scalar_t diff = img_cine_0->diff(img_cine_0_gold);
   //*outStream << "diff cine made without manual header creation vs gold: " << diff << std::endl;
   //if(diff > 0.001){
   intensity_value_error = false;
   for(int_t y=0;y<img_cine_0->height();++y){
     for(int_t x=0;x<img_cine_0->width();++x){
-      if(std::abs((*img_cine_0)(x,y)-(*img_cine_0_gold)(x,y)) > 0.5){
+      if(std::abs((*img_cine_0)(x,y)-(*img_cine_0_gold)(x,y)) > 1.0){
+        *outStream << x << " " << y << " actual " << (*img_cine_0)(x,y) << " exptected " << (*img_cine_0_gold)(x,y) << std::endl;
         intensity_value_error=true;
       }
     }

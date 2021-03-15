@@ -121,10 +121,11 @@ complex_abs(scalar_t & result,
   result = std::sqrt(a_r*a_r + a_i*a_i);
 }
 
+template <typename S>
 DICE_LIB_DLL_EXPORT
 scalar_t
-phase_correlate_x_y(Teuchos::RCP<Image> image_a,
-  Teuchos::RCP<Image> image_b,
+phase_correlate_x_y(Teuchos::RCP<Image_<S>> image_a,
+  Teuchos::RCP<Image_<S>> image_b,
   scalar_t & u_x,
   scalar_t & u_y,
   const bool convert_to_r_theta){
@@ -277,6 +278,15 @@ phase_correlate_x_y(Teuchos::RCP<Image> image_a,
 //  out_image.write(name.str());
   return max_real;
 }
+template
+DICE_LIB_DLL_EXPORT
+scalar_t phase_correlate_x_y(Teuchos::RCP<Image>,Teuchos::RCP<Image>,scalar_t &,scalar_t &,const bool);
+#ifndef STORAGE_SCALAR_SAME_TYPE
+template
+DICE_LIB_DLL_EXPORT
+scalar_t phase_correlate_x_y(Teuchos::RCP<Scalar_Image>,Teuchos::RCP<Scalar_Image>,scalar_t &,scalar_t &,const bool);
+#endif
+
 
 DICE_LIB_DLL_EXPORT
 void
@@ -377,9 +387,10 @@ phase_correlate_row(Teuchos::RCP<Image> image_a,
 // TODO address why we're using 2pi for the range on theta when the angle
 // is only determined up to +/- pi (should we be preventing ambiguity here?)
 
+template <typename S>
 DICE_LIB_DLL_EXPORT
-Teuchos::RCP<Image>
-polar_transform(Teuchos::RCP<Image> image,
+Teuchos::RCP<Image_<S>>
+polar_transform(Teuchos::RCP<Image_<S>> image,
   bool high_pass_filter){
   const int_t w = image->width();
   assert(w>0);
@@ -391,7 +402,7 @@ polar_transform(Teuchos::RCP<Image> image,
   assert(w>0);
   assert(h>0);
   // whatever is passed in for the output array RPC, it gets written over
-  Teuchos::ArrayRCP<intensity_t> output = Teuchos::ArrayRCP<intensity_t> (w*h,0.0);
+  Teuchos::ArrayRCP<S> output(w*h,0);
   const scalar_t t_size = DICE_TWOPI/w;
   const scalar_t r_size = high_pass_filter ? 0.25*w/h : std::sqrt(w_2*w_2 + h_2*h_2)/h;
   int_t x1 = 0;
@@ -432,13 +443,22 @@ polar_transform(Teuchos::RCP<Image> image,
       }
     } // x loop
   } // y loop
-  Teuchos::RCP<Image> out_image = Teuchos::rcp(new Image(w,h,output));
+  Teuchos::RCP<Image_<S>> out_image = Teuchos::rcp(new Image_<S>(w,h,output));
   return out_image;
 }
-
+template
 DICE_LIB_DLL_EXPORT
-Teuchos::RCP<Image>
-image_fft(Teuchos::RCP<Image> image,
+Teuchos::RCP<Image> polar_transform(Teuchos::RCP<Image>,bool);
+#ifndef STORAGE_SCALAR_SAME_TYPE
+template
+DICE_LIB_DLL_EXPORT
+Teuchos::RCP<Scalar_Image> polar_transform(Teuchos::RCP<Scalar_Image>,bool);
+#endif
+
+template <typename S>
+DICE_LIB_DLL_EXPORT
+Teuchos::RCP<Image_<S>>
+image_fft(Teuchos::RCP<Image_<S>> image,
   const bool hamming_filter,
   const bool apply_log,
   const scalar_t scale_factor,
@@ -458,8 +478,8 @@ image_fft(Teuchos::RCP<Image> image,
   assert(w>0);
   assert(h>0);
   assert(w_2>0);
-  Teuchos::ArrayRCP<intensity_t> real;
-  Teuchos::ArrayRCP<intensity_t> complex;
+  Teuchos::ArrayRCP<scalar_t> real;
+  Teuchos::ArrayRCP<scalar_t> complex;
   // for now, disallow the use of the inverse fft
   image_fft(image,real,complex,0,hamming_filter);
   assert(real.size()==w*h);
@@ -468,7 +488,8 @@ image_fft(Teuchos::RCP<Image> image,
   scalar_t min_mag = std::numeric_limits<scalar_t>::max();
 
   int_t index = 0;
-  Teuchos::ArrayRCP<intensity_t> mag(w*h,0.0);
+  Teuchos::ArrayRCP<scalar_t> mag(w*h,0.0);
+  Teuchos::ArrayRCP<S> intensities(w*h,0);
   for(int_t j=0;j<h;++j){
     for(int_t i=0;i<w;++i){
       mag[index] = std::sqrt(real[index]*real[index] + complex[index]*complex[index]);
@@ -488,7 +509,7 @@ image_fft(Teuchos::RCP<Image> image,
 
   if(shift){
     // now shift the quadrants:
-    Teuchos::ArrayRCP<intensity_t> mag_shift(w*h,0.0);
+    Teuchos::ArrayRCP<scalar_t> mag_shift(w*h,0.0);
     int_t xp=0,yp=0;
     for(int_t y=0;y<h;++y){
       for(int_t x=0;x<w;++x){
@@ -531,18 +552,28 @@ image_fft(Teuchos::RCP<Image> image,
         } // x loop
       } // y loop
     }
-
-    return Teuchos::rcp(new Image(w,h,mag_shift));
+    for(int_t i=0;i<intensities.size();++i)
+      intensities[i] = static_cast<S>(mag_shift[i]);
   }
   else{
-    return Teuchos::rcp(new Image(w,h,mag));
+    for(int_t i=0;i<intensities.size();++i)
+      intensities[i] = static_cast<S>(mag[i]);
   }
-
+  return Teuchos::rcp(new Image_<S>(w,h,intensities));
 }
 
+template
+DICE_LIB_DLL_EXPORT
+Teuchos::RCP<Image> image_fft(Teuchos::RCP<Image>,const bool,const bool,const scalar_t,bool,const bool);
+#ifndef STORAGE_SCALAR_SAME_TYPE
+template
+DICE_LIB_DLL_EXPORT
+Teuchos::RCP<Scalar_Image> image_fft(Teuchos::RCP<Scalar_Image>,const bool,const bool,const scalar_t,bool,const bool);
+#endif
+template <typename S>
 DICE_LIB_DLL_EXPORT
 void
-image_fft(Teuchos::RCP<Image> image,
+image_fft(Teuchos::RCP<Image_<S>> image,
   Teuchos::ArrayRCP<scalar_t> & real,
   Teuchos::ArrayRCP<scalar_t> & complex,
   const int_t inverse,
@@ -607,14 +638,20 @@ image_fft(Teuchos::RCP<Image> image,
       complex[y*w+x] = img_col[y].i;
     }
   }
-
   free(cfg_ffx);
   free(cfg_ffy);
   delete[] img_row;
   delete[] img_col;
-
 };
 
+template
+DICE_LIB_DLL_EXPORT
+void image_fft(Teuchos::RCP<Image>,Teuchos::ArrayRCP<scalar_t> &,Teuchos::ArrayRCP<scalar_t> &,const int_t,const bool);
+#ifndef STORAGE_SCALAR_SAME_TYPE
+template
+DICE_LIB_DLL_EXPORT
+void image_fft(Teuchos::RCP<Scalar_Image>,Teuchos::ArrayRCP<scalar_t> &,Teuchos::ArrayRCP<scalar_t> &,const int_t,const bool);
+#endif
 DICE_LIB_DLL_EXPORT
 void
 array_2d_fft_in_place(const int_t w,

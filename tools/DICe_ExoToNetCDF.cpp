@@ -197,7 +197,7 @@ int main(int argc, char *argv[]) {
 
     *outStream << "processing step: " << step << std::endl;
 
-    std::vector<intensity_t> intensities(img_w*img_h);
+    std::vector<scalar_t> intensities(img_w*img_h);
     netcdf_reader->read_netcdf_image(netcdf_input_name.c_str(),step,&intensities[0]);
     // convert the intensities to floats to save space:
     std::vector<float> intens_float(img_w*img_h);

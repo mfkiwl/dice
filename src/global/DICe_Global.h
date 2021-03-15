@@ -164,26 +164,13 @@ public:
   /// set the reference image and perform the necessary pre-filtering + compute gradients
   void initialize_ref_image();
 
-  /// set the reference image and perform the necessary pre-filtering + compute gradients
-  void set_def_image();
-
-  /// return a pointer to the reference image
-  Teuchos::RCP<Image> ref_img()const{
-    return ref_img_;
-  }
-
-  /// return a pointer to the deformed image
-  Teuchos::RCP<Image> def_img()const{
-    return def_img_;
-  }
-
   /// return a pointer to the grad x image
-  Teuchos::RCP<Image> grad_x()const{
+  Teuchos::RCP<Scalar_Image> grad_x()const{
     return grad_x_img_;
   }
 
   /// return a pointer to the grad y image
-  Teuchos::RCP<Image> grad_y()const{
+  Teuchos::RCP<Scalar_Image> grad_y()const{
     return grad_y_img_;
   }
 
@@ -222,23 +209,19 @@ protected:
   /// name of the linear output file
   std::string lagrange_output_file_name_;
   /// linear problem
-  Teuchos::RCP< Belos::LinearProblem<mv_scalar_type,vec_type,operator_type> > linear_problem_;
+  Teuchos::RCP< Belos::LinearProblem<precision_t,vec_type,operator_type> > linear_problem_;
   /// belos solver
-  Teuchos::RCP< Belos::SolverManager<mv_scalar_type,vec_type,operator_type> > belos_solver_;
+  Teuchos::RCP< Belos::SolverManager<precision_t,vec_type,operator_type> > belos_solver_;
   /// boundary condition manager
   Teuchos::RCP<BC_Manager> bc_manager_;
   /// true if the solver, etc been initialized
   bool is_initialized_;
   /// set of active terms in the formulation
   std::set<Global_EQ_Term> eq_terms_;
-  /// reference image (filtered and normalized)
-  Teuchos::RCP<Image> ref_img_;
-  /// deformed image (filtered and normalized)
-  Teuchos::RCP<Image> def_img_;
   /// gradient_x image
-  Teuchos::RCP<Image> grad_x_img_;
+  Teuchos::RCP<Scalar_Image> grad_x_img_;
   /// gradient_y image
-  Teuchos::RCP<Image> grad_y_img_;
+  Teuchos::RCP<Scalar_Image> grad_y_img_;
   /// enum of the formulation to use
   Global_Formulation global_formulation_;
   /// Global solver type

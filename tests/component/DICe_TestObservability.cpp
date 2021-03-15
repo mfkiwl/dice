@@ -56,7 +56,7 @@
 using namespace DICe;
 using namespace DICe::field_enums;
 
-intensity_t phi(const scalar_t & x, const scalar_t & y, const scalar_t & period, const scalar_t & L){
+scalar_t phi(const scalar_t & x, const scalar_t & y, const scalar_t & period, const scalar_t & L){
   assert(period!=0.0);
   const scalar_t freq = 1.0/period;
   const scalar_t gamma = 2.0*freq*DICE_PI;
@@ -73,11 +73,6 @@ void compute_b(const scalar_t & x, const scalar_t & y, const scalar_t & period, 
   bx = amplitude*0.5 + 0.5*amplitude*std::sin(gamma*x)*std::cos(gamma*y);
   by = amplitude*0.5 - 0.5*amplitude*std::cos(gamma*x)*std::sin(gamma*y);
 }
-
-struct computed_point
-{
-    scalar_t x_, y_, bx_, by_, sol_bx_, sol_by_,error_bx_,error_by_;
-};
 
 int main(int argc, char *argv[]) {
 
@@ -141,7 +136,7 @@ int main(int argc, char *argv[]) {
   }
 
   std::default_random_engine generator;
-  std::normal_distribution<intensity_t> distribution(0.0,0.5);
+  std::normal_distribution<scalar_t> distribution(0.0,0.5);
 
   *outStream << "variable name:      " << var_name << std::endl;
   *outStream << "start value:        " << start_val << std::endl;
@@ -188,7 +183,7 @@ int main(int argc, char *argv[]) {
   scalar_t param_value = 0.0;
   scalar_t param_value2 = 0.0;
 
-  Teuchos::ArrayRCP<intensity_t> dummy_intensities(L*L,0.0);
+  Teuchos::ArrayRCP<storage_t> dummy_intensities(L*L,0.0);
   Teuchos::RCP<Image> dummy_img = Teuchos::rcp(new Image(L,L,dummy_intensities));
   Teuchos::RCP<Schema> schema;
   const bool inner_init_required = var_name=="subset_size"||var_name=="step_size"||var_name2=="subset_size"||var_name2=="step_size";
@@ -275,7 +270,7 @@ int main(int argc, char *argv[]) {
       const scalar_t nyquist_b = 2.0/b_period;
       //*outStream << "Nyquist b: " << nyquist_b << " sampling b: " << sampling_b << " sampling rate must be greater than Nyquist" << std::endl;
       TEUCHOS_TEST_FOR_EXCEPTION(nyquist_b >= sampling_b,std::runtime_error,"Error, sampling for b is below Nyquist freq.");
-      Teuchos::ArrayRCP<intensity_t> intensities(L*L,0.0);
+      Teuchos::ArrayRCP<scalar_t> intensities(L*L,0.0);
       for(int_t j=0;j<L;++j){
         for(int_t i=0;i<L;++i){
           intensities[j*L+i] = phi(i,j,phi_period,L);
@@ -283,7 +278,7 @@ int main(int argc, char *argv[]) {
       }
       Teuchos::RCP<Teuchos::ParameterList> params = rcp(new Teuchos::ParameterList());
       params->set(DICe::compute_image_gradients,true);
-      Teuchos::RCP<Image> img = Teuchos::rcp(new Image(L,L,intensities,params));
+      Teuchos::RCP<Scalar_Image> img = Teuchos::rcp(new Scalar_Image(L,L,intensities,params));
       Teuchos::RCP<MultiField> bx_command = schema->mesh()->get_field(DICe::field_enums::FIELD_1_FS);
       Teuchos::RCP<MultiField> by_command = schema->mesh()->get_field(DICe::field_enums::FIELD_2_FS);
       Teuchos::RCP<MultiField> bx_computed = schema->mesh()->get_field(DICe::field_enums::FIELD_3_FS);
@@ -331,7 +326,7 @@ int main(int argc, char *argv[]) {
             H(1,1) += regularization_mag;
             compute_b(i,j,b_period,b_amp,L,bx,by);
             if(noise_mag > 0.0){
-                intensity_t pert = distribution(generator);
+                scalar_t pert = distribution(generator);
                 //std::cout << "pert: " << pert << " noise_mag " << noise_mag << std::endl;
                 bx+= pert*noise_mag;
                 by+= pert*noise_mag;

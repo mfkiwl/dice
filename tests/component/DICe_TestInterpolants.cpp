@@ -71,9 +71,9 @@ int main(int argc, char *argv[]) {
   *outStream << "creating an image from an array" << std::endl;
   const int_t array_w = 40;
   const int_t array_h = 30;
-  intensity_t * intensities = new intensity_t[array_w*array_h];
+  Teuchos::ArrayRCP<scalar_t> intensities(array_w*array_h,0.0);
   // populate the intensities with a sin/cos function
-  intensity_t x_val = 0.0, y_val = 0.0;
+  scalar_t x_val = 0.0, y_val = 0.0;
   for(int_t y=0;y<array_h;++y){
     for(int_t x=0;x<array_w;++x){
       x_val = 255*((scalar_t)x/(scalar_t)array_w);
@@ -81,7 +81,7 @@ int main(int argc, char *argv[]) {
       intensities[y*array_w+x] = x_val*y_val;
     }
   }
-  Teuchos::RCP<Image> array_img = Teuchos::rcp(new Image(intensities,array_w,array_h));
+  Teuchos::RCP<Scalar_Image> array_img = Teuchos::rcp(new Scalar_Image(array_w,array_h,intensities));
   array_img->write("interp_array_img.tif");
 
   const int_t cx = array_w/2;
@@ -107,6 +107,7 @@ int main(int argc, char *argv[]) {
     x_val = 255.0*px/(scalar_t)array_w;
     y_val = 255.0*py/(scalar_t)array_h;
     const scalar_t exact = x_val*y_val;
+
     error_bi += std::abs(subset_bi.def_intensities(i) - exact);
     error_keys += std::abs(subset_keys.def_intensities(i) - exact);
     //std::cout << " x " << subset_bi.x(i) << " y " << subset_bi.y(i) <<

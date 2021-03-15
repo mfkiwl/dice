@@ -394,8 +394,8 @@ int main(int argc, char *argv[]) {
       } // end image i
     } // end image j
 
-    Teuchos::RCP<DICe::Image> image = Teuchos::rcp(new DICe::Image(img_w,img_h,0.0));
-    Teuchos::ArrayRCP<intensity_t> intensities = image->intensities();
+    Teuchos::RCP<DICe::Image> image = Teuchos::rcp(new DICe::Image(img_w,img_h,0));
+    Teuchos::ArrayRCP<storage_t> intensities = image->intensities();
 
     Mat cv_img, cv_mask, cv_inpainted;
     cv_img.create(img_h, img_w, CV_8UC(1));
@@ -407,7 +407,7 @@ int main(int argc, char *argv[]) {
     for(int_t px_j=0;px_j<img_h;++px_j){
       for(int_t px_i=0;px_i<img_w;++px_i){
         // convert the value to counts and put it in the image:
-        intensity_t count_value = (projected_values[px_j*img_w+px_i] - min_value)*counts_per_unit;
+        storage_t count_value = (projected_values[px_j*img_w+px_i] - min_value)*counts_per_unit;
         if(on_part[px_j*img_w+px_i])
           intensities[px_j*img_w+px_i] = count_value;
         cv_img.at<uchar>(px_j,px_i) = count_value;
@@ -439,8 +439,8 @@ int main(int argc, char *argv[]) {
     const int_t buf_img_h = img_h - 2*buffer;
     assert(buf_img_h!=0);
     assert(buf_img_w!=0);
-    Teuchos::RCP<DICe::Image> buf_image = Teuchos::rcp(new DICe::Image(buf_img_w,buf_img_h,0.0));
-    Teuchos::ArrayRCP<intensity_t> buf_intensities = buf_image->intensities();
+    Teuchos::RCP<DICe::Image> buf_image = Teuchos::rcp(new DICe::Image(buf_img_w,buf_img_h,0));
+    Teuchos::ArrayRCP<storage_t> buf_intensities = buf_image->intensities();
     for(int_t px_j=0;px_j<buf_img_h;++px_j){
       for(int_t px_i=0;px_i<buf_img_w;++px_i){
         buf_intensities[px_j*buf_img_w+px_i] = intensities[(px_j+buffer)*img_w+px_i+buffer];
@@ -456,7 +456,7 @@ int main(int argc, char *argv[]) {
       buf_image->write(out_name.str());
 //    image->write(out_name.str());
     Teuchos::RCP<Image> image_fft = DICe::image_fft(buf_image);
-    Teuchos::ArrayRCP<intensity_t> fft_intensities = image_fft->intensities();
+    Teuchos::ArrayRCP<storage_t> fft_intensities = image_fft->intensities();
     std::stringstream out_name_fft;
     out_name_fft << "fft_step_" << step << ".tif";
     if(output_debug_images)

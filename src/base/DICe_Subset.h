@@ -46,9 +46,6 @@
 #include <DICe_Shape.h>
 #include <DICe_Image.h>
 #include <DICe_LocalShapeFunction.h>
-#if DICE_KOKKOS
-  #include <DICe_Kokkos.h>
-#endif
 
 #include <Teuchos_ArrayRCP.hpp>
 
@@ -157,18 +154,19 @@ public:
 
   /// ref intensities accessor
   /// \param pixel_index the pixel id
-  intensity_t& ref_intensities(const int_t pixel_index);
+  scalar_t & ref_intensities(const int_t pixel_index);
 
   /// ref intensities accessor
   /// \param pixel_index the pixel id
-  intensity_t& def_intensities(const int_t pixel_index);
+  scalar_t & def_intensities(const int_t pixel_index);
 
   /// initialization method:
   /// \param image the image to get the intensity values from
   /// \param target the initialization mode (put the values in the ref or def intensities)
   /// \param shape_function contains the deformation map (optional)
   /// \param interp interpolation method (optional)
-  void initialize(Teuchos::RCP<Image> image,
+  template <typename S>
+  void initialize(Teuchos::RCP<Image_<S>> image,
     const Subset_View_Target target=REF_INTENSITIES,
     Teuchos::RCP<Local_Shape_Function> shape_function=Teuchos::null,
     const Interpolation_Method interp=KEYS_FOURTH);
@@ -176,24 +174,25 @@ public:
   /// write the subset intensity values to a tif file
   /// \param file_name the name of the tif file to write
   /// \param use_def_intensities use the deformed intensities rather than the reference
-  void write_tiff(const std::string & file_name,
+  void write_image(const std::string & file_name,
     const bool use_def_intensities=false);
 
   /// draw the subset over an image
   /// \param file_name the name of the tif file to write
   /// \param image pointer to the image to use as the background
   /// \param shape_function contains the deformation map (optional)
+  template <typename S>
   void write_subset_on_image(const std::string & file_name,
-    Teuchos::RCP<Image> image,
+    Teuchos::RCP<Image_<S>> image,
     Teuchos::RCP<Local_Shape_Function> shape_function=Teuchos::null);
 
   /// returns the max intensity value
   /// \param target either the reference or deformed intensity values
-  intensity_t max(const Subset_View_Target target=REF_INTENSITIES);
+  scalar_t max(const Subset_View_Target target=REF_INTENSITIES);
 
   /// returns the min intensity value
   /// \param target either the reference or deformed intensity values
-  intensity_t min(const Subset_View_Target target=REF_INTENSITIES);
+  scalar_t min(const Subset_View_Target target=REF_INTENSITIES);
 
   /// returns the mean intensity value
   /// \param target either the reference or deformed intensity values
@@ -258,7 +257,8 @@ public:
   /// The estimate is computed for a rectangular window that encompases the entire subset if the subset is conformal
   /// \param image the image for which to estimate the noise for this subset
   /// \param shape_function contains the deformation map (optional)
-  scalar_t noise_std_dev(Teuchos::RCP<Image> image,
+  template <typename S>
+  scalar_t noise_std_dev(Teuchos::RCP<Image_<S>> image,
     Teuchos::RCP<Local_Shape_Function> shape_function);
 
   /// \brief Returns the std deviation of the image intensity values
@@ -303,50 +303,13 @@ public:
     const int_t cy=0,
     const scalar_t & skin_factor=1.0);
 
-#if DICE_KOKKOS
-  /// x coordinate view accessor
-  pixel_coord_dual_view_1d x()const{
-    return x_;
-  }
-  /// y coordinate view accessor
-  pixel_coord_dual_view_1d y()const{
-    return y_;
-  }
-  /// ref intensities device view accessor
-  intensity_dual_view_1d ref_intensities()const{
-    return ref_intensities_;
-  }
-  /// ref intensities device view accessor
-  intensity_dual_view_1d def_intensities()const{
-    return def_intensities_;
-  }
-#endif
-
 private:
   /// number of pixels in the subset
   int_t num_pixels_;
-#if DICE_KOKKOS
   /// pixel container
-  intensity_dual_view_1d ref_intensities_;
+  Teuchos::ArrayRCP<scalar_t> ref_intensities_;
   /// pixel container
-  intensity_dual_view_1d def_intensities_;
-  /// container for grad_x
-  scalar_dual_view_1d grad_x_;
-  /// container for grad_y
-  scalar_dual_view_1d grad_y_;
-  /// pixels can be deactivated by obstructions (persistent)
-  bool_dual_view_1d is_active_;
-  /// pixels can be deactivated for this frame only
-  bool_dual_view_1d is_deactivated_this_step_;
-  /// initial x position of the pixels in the reference image
-  pixel_coord_dual_view_1d x_;
-  /// initial x position of the pixels in the reference image
-  pixel_coord_dual_view_1d y_;
-#else
-  /// pixel container
-  Teuchos::ArrayRCP<intensity_t> ref_intensities_;
-  /// pixel container
-  Teuchos::ArrayRCP<intensity_t> def_intensities_;
+  Teuchos::ArrayRCP<scalar_t> def_intensities_;
   /// container for grad_x
   Teuchos::ArrayRCP<scalar_t> grad_x_;
   /// container for grad_y
@@ -359,7 +322,6 @@ private:
   Teuchos::ArrayRCP<int_t> x_;
   /// initial x position of the pixels in the reference image
   Teuchos::ArrayRCP<int_t> y_;
-#endif
   /// \brief EXPERIMENTAL Holds the obstruction coordinates if they exist.
   /// NOTE: The coordinates are switched for this (i.e. (Y,X)) so that
   /// the loops over y then x will be more efficient

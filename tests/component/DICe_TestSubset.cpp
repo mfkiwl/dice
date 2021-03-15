@@ -149,8 +149,8 @@ int main(int argc, char *argv[]) {
   Teuchos::RCP<Local_Shape_Function> shape_function = shape_function_factory();
   shape_function->insert_motion(5.0,10.0);
   square.initialize(image,DEF_INTENSITIES,shape_function,BILINEAR);
-  square.write_tiff("squareSubsetRef.tif",false);
-  square.write_tiff("squareSubsetDef.tif",true);
+  square.write_image("squareSubsetRef.tif",false);
+  square.write_image("squareSubsetDef.tif",true);
   square.write_subset_on_image("squareSubsetMapped.tif",image,shape_function);
   // check simple motion intensity values
   *outStream << "checking the bilinear interpolation" << std::endl;
@@ -172,8 +172,8 @@ int main(int argc, char *argv[]) {
 //  (*affine_map)[DOF_F] = 10;
 //  (*affine_map)[DOF_I] = 1;
 //  square.initialize(image,DEF_INTENSITIES,affine_map,BILINEAR);
-//  square.write_tiff("squareAffineSubsetRef.tif",false);
-//  square.write_tiff("squareAffineSubsetDef.tif",true);
+//  square.write_image("squareAffineSubsetRef.tif",false);
+//  square.write_image("squareAffineSubsetDef.tif",true);
 //  square.write_subset_on_image("squareAffineSubsetMapped.tif",image,affine_map);
 //  // check simple motion intensity values
 //  *outStream << "checking the bilinear interpolation" << std::endl;
@@ -190,7 +190,7 @@ int main(int argc, char *argv[]) {
   *outStream << "checking the keys fourth order interpolant" << std::endl;
   shape_function->insert_motion(15.0,12.0);
   square.initialize(image,DEF_INTENSITIES,shape_function,KEYS_FOURTH);
-  square.write_tiff("squareSubsetDefKeys.tif",true);
+  square.write_image("squareSubsetDefKeys.tif",true);
   bool keys_values_error = false;
   for(int_t i=0;i<square.num_pixels();++i){
     if(std::abs(square.def_intensities(i)-(*image)(square.x(i)+15.0,square.y(i)+12.0))>0.001)
@@ -275,7 +275,7 @@ int main(int argc, char *argv[]) {
   int_t ccy = 428;
   Subset conformal_subset(ccx,ccy,subset_def);
   conformal_subset.initialize(image);
-  conformal_subset.write_tiff("conformal.tif");
+  conformal_subset.write_image("conformal.tif");
   // read in the image that was just created and compare to a gold copy:
   Teuchos::RCP<Teuchos::ParameterList> conf_params = rcp(new Teuchos::ParameterList());
   conf_params->set(DICe::spread_intensity_histogram,true);
@@ -283,9 +283,9 @@ int main(int argc, char *argv[]) {
   Image conf_img("./conformal.tif",conf_params);
   //conf_img.write("conformal.rawi");
 #ifdef DICE_USE_DOUBLE
-  Image conf_img_exact("./images/conformal_d.rawi");
+  Scalar_Image conf_img_exact("./images/conformal_d.rawi");
 #else
-  Image conf_img_exact("./images/conformal.rawi");
+  Scalar_Image conf_img_exact("./images/conformal.rawi");
 #endif
   //conformal_subset.write_subset_on_image("ConformalOnImage.tiff",image);
   // compare the sizes and intensity values
@@ -297,6 +297,7 @@ int main(int argc, char *argv[]) {
   for(int_t y=0;y<conf_img.height();++y){
     for(int_t x=0;x<conf_img.width();++x){
       if(conf_img(x,y) != conf_img_exact(x,y)){
+        std::cout << " conf exaxt " << conf_img_exact(x,y) << " computed " << conf_img(x,y) << std::endl;
         intensity_error = true;
       }
     }
@@ -311,20 +312,16 @@ int main(int argc, char *argv[]) {
   *outStream << "creating an image from an array" << std::endl;
   const int_t array_w = 30;
   const int_t array_h = 20;
-  intensity_t * intensities = new intensity_t[array_w*array_h];
-  scalar_t * gx = new scalar_t[array_w*array_h];
-  scalar_t * gy = new scalar_t[array_w*array_h];
+  Teuchos::ArrayRCP<storage_t> intensities(array_w*array_h,0.0);
   // populate the intensities with a sin/cos function
   for(int_t y=0;y<array_h;++y){
     for(int_t x=0;x<array_w;++x){
-      intensities[y*array_w+x] = 255*std::cos(x/(4*DICE_PI))*std::sin(y/(4*DICE_PI));
-      gx[y*array_w+x] = -255*(1/(4*DICE_PI))*std::sin(x/(4*DICE_PI))*std::sin(y/(4*DICE_PI));
-      gy[y*array_w+x] = 255*(1/(4*DICE_PI))*std::cos(x/(4*DICE_PI))*std::cos(y/(4*DICE_PI));
+      intensities[y*array_w+x] = std::round(255.0*std::cos(x/(4*DICE_PI))*std::sin(y/(4*DICE_PI)));
     }
   }
   Teuchos::RCP<Teuchos::ParameterList> params = rcp(new Teuchos::ParameterList());
   params->set(DICe::compute_image_gradients,true);
-  Teuchos::RCP<Image> array_img = Teuchos::rcp(new Image(intensities,array_w,array_h,params));
+  Teuchos::RCP<Image> array_img = Teuchos::rcp(new Image(array_w,array_h,intensities,params));
   *outStream << "creating a conformal subset" << std::endl;
   std::vector<int_t> shape_3_x(4);
   std::vector<int_t> shape_3_y(4);
@@ -355,9 +352,6 @@ int main(int argc, char *argv[]) {
     errorFlag++;
   }
   *outStream << "gradient values have been tested" << std::endl;
-  delete[] intensities;
-  delete[] gx;
-  delete[] gy;
 
   *outStream << "--- End test ---" << std::endl;
 

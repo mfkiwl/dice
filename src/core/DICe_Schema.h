@@ -44,6 +44,7 @@
 
 #include <DICe.h>
 #include <DICe_Image.h>
+#include <DICe_ImageUtils.h>
 #include <DICe_Shape.h>
 #include <DICe_Initializer.h>
 #include <DICe_Parser.h>
@@ -79,10 +80,6 @@ class Post_Processor;
 
 // forward dec for a triangulation
 class Triangulation;
-
-// forward dec of image deformer
-class Image_Deformer;
-
 
 /// container class that holds information about a tracking analysis
 class
@@ -307,15 +304,11 @@ public:
   /// Replace the deformed image using an intensity array
   void set_def_image(const int_t img_width,
     const int_t img_height,
-    const Teuchos::ArrayRCP<intensity_t> defRCP,
+    const Teuchos::ArrayRCP<storage_t> defRCP,
     const int_t id=0);
 
   /// Replace the deformed image using an image
   void set_def_image(Teuchos::RCP<Image> img,
-    const int_t id=0);
-
-  /// Replace the previous image using an image
-  void set_prev_image(Teuchos::RCP<Image> img,
     const int_t id=0);
 
   /// Rotate the deformed image if requested
@@ -327,10 +320,13 @@ public:
   /// Replace the deformed image using an intensity array
   void set_ref_image(const int_t img_width,
     const int_t img_height,
-    const Teuchos::ArrayRCP<intensity_t> refRCP);
+    const Teuchos::ArrayRCP<storage_t> refRCP);
 
   /// Replace the reference image using an image
   void set_ref_image(Teuchos::RCP<Image> img);
+
+  /// Swap the deformed and previous image in memory
+  void swap_def_prev_images();
 
   /// Conduct the correlation
   /// returns 0 if successful
@@ -525,7 +521,7 @@ public:
   /// \brief Return the value of the given field at the given global id (must be local to this process)
   /// \param global_id Global ID of the element
   /// \param spec the Field_Spec of the field to get the value for
-  mv_scalar_type & global_field_value(const int_t global_id,
+  precision_t & global_field_value(const int_t global_id,
     const DICe::field_enums::Field_Spec spec){
     return local_field_value(subset_local_id(global_id),spec);
   }
@@ -533,7 +529,7 @@ public:
   /// \brief Return the value of the given field at the given local id (must be local to this process)
   /// \param local_id local ID of the subset
   /// \param spec the Field_Spec of the requested field
-  mv_scalar_type & local_field_value(const int_t local_id,
+  precision_t & local_field_value(const int_t local_id,
     const DICe::field_enums::Field_Spec spec){
     assert(local_id<local_num_subsets_);
     assert(local_id>=0);
@@ -1190,6 +1186,8 @@ private:
   bool gauss_filter_images_;
   /// filter the images using a gauss_filter_mask_size_ point gauss filter
   bool filter_failed_cine_pixels_;
+  /// filter the images using a gauss_filter_mask_size_ point gauss filter
+  bool convert_cine_to_8_bit_;
   /// filter the images using a gauss_filter_mask_size_ point gauss filter
   int_t gauss_filter_mask_size_;
   /// Compute the reference image gradients

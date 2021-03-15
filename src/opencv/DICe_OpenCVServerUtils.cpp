@@ -44,6 +44,7 @@
 */
 
 #include <DICe.h>
+#include <DICe_ImageIO.h>
 #include <DICe_OpenCVServerUtils.h>
 #include <DICe_Parser.h>
 #include <DICe_Calibration.h>
@@ -66,9 +67,38 @@ DICE_LIB_DLL_EXPORT
 Teuchos::ParameterList parse_filter_string(int argc, char *argv[]){
   DEBUG_MSG("opencv_server::parse_filter_string():");
   DEBUG_MSG("User specified " << argc << " arguments");
-  //for(int_t i=0;i<argc;++i){
-  //  DEBUG_MSG(argv[i]);
-  //}
+//  for(int_t i=0;i<argc;++i){
+//    DEBUG_MSG(argv[i]);
+//  }
+
+  // test if these are params for tracklib
+  std::string first_arg = argv[1];
+  if(first_arg==opencv_server_filter_tracklib){
+    TEUCHOS_TEST_FOR_EXCEPTION(argc<3,std::runtime_error,"");
+    Teuchos::ParameterList tracklib_params;
+    tracklib_params.set("use_tracklib",true);
+    // assume the rest is key value pairs
+    for(int i=2;i<argc;++i){
+      std::string arg = argv[i++];
+//      std::cout << " found parameter " << arg << std::endl;
+      std::string value = argv[i];
+//      std::cout << " value " << value << std::endl;
+      if(std::isdigit(value[0])||value[0]=='-'){ // is the string a number?
+        if(value.find('.')!=std::string::npos){ // is it a double
+          tracklib_params.set(arg,std::strtod(value.c_str(),NULL));
+        }else{ // it must be an integer
+          tracklib_params.set(arg,std::atoi(value.c_str()));
+        }
+      }else if(value.find("true")!=std::string::npos){
+        tracklib_params.set(arg,true);
+      }else if(value.find("false")!=std::string::npos){ // test for bools
+        tracklib_params.set(arg,false);
+      }else{ // otherwise add a string parameter
+        tracklib_params.set(arg,value);
+      }
+    }
+    return tracklib_params;
+  }
 
   Teuchos::ParameterList params;
   Teuchos::ParameterList io_files;
@@ -160,8 +190,72 @@ int_t opencv_server(int argc, char *argv[]){
 #ifdef DICE_DEBUG_MSG
   input_params.print(std::cout);
 #endif
+
+  // check for is_tracklib
+  if(input_params.get<bool>("use_tracklib",false)){
+
+    // split the parameters up into input and tracklib and call tracklib_driver
+    Teuchos::RCP<Teuchos::ParameterList> file_params = Teuchos::rcp( new Teuchos::ParameterList());
+    Teuchos::RCP<Teuchos::ParameterList> tracking_params = Teuchos::rcp( new Teuchos::ParameterList());
+    file_params->set("cine_file",input_params.get<std::string>("cine_file"));
+    file_params->set("stereo_cine_file",input_params.get<std::string>("stereo_cine_file"));
+    file_params->set("cine_ref_index",input_params.get<int>("cine_ref_index"));
+    file_params->set("cine_start_index",input_params.get<int>("cine_start_index"));
+    file_params->set("cine_preview_index",input_params.get<int>("cine_preview_index"));
+    file_params->set("cine_skip_index",input_params.get<int>("cine_skip_index"));
+    file_params->set("cine_end_index",input_params.get<int>("cine_end_index"));
+    file_params->set("camera_system_file",input_params.get<std::string>("camera_system_file"));
+//    file_params->set("display_file_left",input_params.get<std::string>("display_file_left"));
+//    file_params->set("display_file_right",input_params.get<std::string>("display_file_right"));
+
+    tracking_params->set("thresh_left",input_params.get<int>("thresh_left"));
+    tracking_params->set("thresh_right",input_params.get<int>("thresh_right"));
+    tracking_params->set("max_pt_density",input_params.get<double>("max_pt_density"));
+    tracking_params->set("min_area",input_params.get<int>("min_area"));
+    tracking_params->set("max_area",input_params.get<int>("max_area"));
+    tracking_params->set("colocation_tol",input_params.get<double>("colocation_tol"));
+    tracking_params->set("neighbor_radius",input_params.get<double>("neighbor_radius"));
+    tracking_params->set("num_search_frames",input_params.get<int>("num_search_frames"));
+    tracking_params->set("min_pts_per_track",input_params.get<int>("min_pts_per_track"));
+    tracking_params->set("area_tol",input_params.get<double>("area_tol"));
+    tracking_params->set("area_weight",input_params.get<double>("area_weight"));
+    tracking_params->set("gray_tol",input_params.get<int>("gray_tol"));
+    tracking_params->set("gray_weight",input_params.get<double>("gray_weight"));
+    tracking_params->set("dist_weight",input_params.get<double>("dist_weight"));
+    tracking_params->set("angle_tol",input_params.get<double>("angle_tol"));
+    tracking_params->set("angle_weight",input_params.get<double>("angle_weight"));
+    tracking_params->set("stereo_area_tol",input_params.get<double>("stereo_area_tol"));
+    tracking_params->set("stereo_area_weight",input_params.get<double>("stereo_area_weight"));
+    tracking_params->set("dist_from_epi_tol",input_params.get<double>("dist_from_epi_tol"));
+    tracking_params->set("dist_from_epi_weight",input_params.get<double>("dist_from_epi_weight"));
+    tracking_params->set("num_background_frames",input_params.get<int>("num_background_frames"));
+    tracking_params->set("show_segmentation",input_params.get<bool>("show_segmentation",false));
+    tracking_params->set("write_results",input_params.get<bool>("write_results",true));
+    tracking_params->set("preview_mode",true);
+
+#ifdef DICE_ENABLE_TRACKLIB
+    error_code = TrackLib::tracklib_driver(file_params,tracking_params);
+#else
+    TEUCHOS_TEST_FOR_EXCEPTION(true,std::runtime_error,"tracklib_driver only available when DICe is built with tracklib on");
+#endif
+    return error_code;
+  }
+
   Teuchos::ParameterList io_files = input_params.get<Teuchos::ParameterList>(DICe::opencv_server_io_files,Teuchos::ParameterList());
   Teuchos::ParameterList filters = input_params.get<Teuchos::ParameterList>(DICe::opencv_server_filters,Teuchos::ParameterList());
+
+  // if the input and output files are the same path then get the dimensions and exit
+  std::string first_image_in = io_files.begin()->first;
+  std::string first_image_out = io_files.get<std::string>(io_files.begin()->first);
+  DEBUG_MSG("opencv_server(): first image in " << first_image_in << " first_image_out " << first_image_out);
+  if(first_image_in==first_image_out){
+    DEBUG_MSG("opencv_server(): input and out image files are the same, reading dimensions and exiting");
+    int width=0, height=0;
+    DICe::utils::read_image_dimensions(first_image_in.c_str(),width,height);
+    BUFFER_MSG("IMAGE_WIDTH",width);
+    BUFFER_MSG("IMAGE_HEIGHT",height);
+    return error_code;
+  }
 
   // if the background filter is active, create a background image to pass to subsequent filters:
   Mat background_img; // empty if no background image is available
@@ -171,7 +265,8 @@ int_t opencv_server(int argc, char *argv[]){
       //if(options.get<int>(opencv_server_background_num_frames,1)<=1) break; // zero means don't do background subtraction
       opencv_create_cine_background_image(options);
       const std::string background_file = options.get<std::string>(opencv_server_background_file_name); // the check that this param exists happens in function above
-      background_img = imread(background_file, IMREAD_GRAYSCALE);
+//      background_img = imread(background_file, IMREAD_GRAYSCALE);
+      background_img = DICe::utils::read_image(background_file.c_str());
       break;
     }
   }
@@ -184,9 +279,11 @@ int_t opencv_server(int argc, char *argv[]){
     // load the image as an openCV mat
     Mat img;
     if(image_in_filename.find("filter")!=std::string::npos)
-      img = imread(image_in_filename, IMREAD_COLOR); // if it's a filtered image it might have color annotations
+      img = DICe::utils::read_image(image_in_filename.c_str()); // TODO if it's a filtered image it might have color annotations
+//    img = imread(image_in_filename, IMREAD_COLOR); // if it's a filtered image it might have color annotations
     else
-      img = imread(image_in_filename, IMREAD_GRAYSCALE);
+      img = DICe::utils::read_image(image_in_filename.c_str());
+//      img = imread(image_in_filename, IMREAD_GRAYSCALE);
     if(img.empty()){
       std::cout << "*** error, the image is empty" << std::endl;
       return 4;
@@ -194,6 +291,14 @@ int_t opencv_server(int argc, char *argv[]){
     if(!img.data){
       std::cout << "*** error, the image failed to load" << std::endl;
       return 4;
+    }
+    if(file_it==io_files.begin()){
+      BUFFER_MSG("IMAGE_WIDTH",img.cols);
+      BUFFER_MSG("IMAGE_HEIGHT",img.rows);
+      // if the input and the output images are the same, return without writing an output image
+      if(image_in_filename.compare(image_out_filename) == 0){
+        return error_code;
+      }
     }
     // iterate the selected filters
     for(Teuchos::ParameterList::ConstIterator filter_it=filters.begin();filter_it!=filters.end();++filter_it){
@@ -215,14 +320,16 @@ int_t opencv_server(int argc, char *argv[]){
         error_code = opencv_dot_targets(img,options,return_thresh);
       }else if(filter==opencv_server_filter_epipolar_line){
         error_code = opencv_epipolar_line(img,options,file_it==io_files.begin());
-      }else if(filter==opencv_server_filter_tracklib){
-        DEBUG_MSG("Applying TrackLib filter");
-#ifdef DICE_ENABLE_TRACKLIB
-        error_code = TrackLib::tracklib_preview(img,background_img,options);
-#else
-        TEUCHOS_TEST_FOR_EXCEPTION(true,std::runtime_error,"Filter tracklib is only available when tracklib is available");
-#endif
-      }else{
+      }
+//      else if(filter==opencv_server_filter_tracklib){
+//        DEBUG_MSG("Applying TrackLib filter");
+//#ifdef DICE_ENABLE_TRACKLIB
+//        error_code = TrackLib::tracklib_preview(img,background_img,options);
+//#else
+//        TEUCHOS_TEST_FOR_EXCEPTION(true,std::runtime_error,"Filter tracklib is only available when tracklib is available");
+//#endif
+//      }
+      else{
         std::cout << "error, unknown filter: " << filter << std::endl;
         error_code = 5;
       }
@@ -490,6 +597,12 @@ int_t opencv_dot_targets(Mat & img,
   img_points.clear();
   grd_points.clear();
 
+#ifdef DICE_DEBUG_MSG
+  std::cout << "--- opencv_dot_targets(): options:" << std::endl;
+  options.print(std::cout);
+#endif
+
+
   // clone the input image so that we have a copy of the original
   Mat img_cpy = img.clone();
 
@@ -588,8 +701,13 @@ int_t opencv_dot_targets(Mat & img,
     min_blob_size = 10;
     get_dot_markers(img_cpy,key_points,i_thresh,invert,options,min_blob_size);
     if(key_points.size() !=3){
-      std::cout << "*** warning: unable to identify three keypoints, other points will not be extracted" << std::endl;
-      keypoints_found = false;
+      // try a larger min blob size
+      min_blob_size = 500;
+      get_dot_markers(img_cpy,key_points,i_thresh,invert,options,min_blob_size);
+      if(key_points.size() != 3){
+        std::cout << "*** warning: unable to identify three keypoints, other points will not be extracted" << std::endl;
+        keypoints_found = false;
+      }
     }
   }
   Point cvpoint;

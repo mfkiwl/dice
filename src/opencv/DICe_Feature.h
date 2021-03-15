@@ -72,8 +72,9 @@ void match_features(Teuchos::RCP<Image> left_image,
 /// convert a DICe Image to an opencv 8uc1 type array
 /// \param image pointer to a DICe::Image
 /// \param array pointer to the value array (assumes already allocated)
+template <typename S>
 DICE_LIB_DLL_EXPORT
-void opencv_8UC1(Teuchos::RCP<Image> image, unsigned char * array);
+void opencv_8UC1(Teuchos::RCP<Image_<S>> image, unsigned char * array);
 
 
 

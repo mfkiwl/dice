@@ -67,16 +67,19 @@ extern "C" {
 
 /// Typedef integer as size type
 typedef int int_t;
+
 #if DICE_USE_DOUBLE
-  /// image intensity type
-  typedef double intensity_t;
   /// generic scalar type
   typedef double scalar_t;
 #else
-  /// Typedef double as real type
+  /// generic scalar type
   typedef float scalar_t;
-  /// Tyepdef double as pixel intensity type
-  typedef float intensity_t;
+#endif
+
+#if DICE_USE_INT_STORAGE
+  typedef unsigned short storage_t;
+#else
+  typedef scalar_t storage_t;
 #endif
 
 // Forward declaration of ParameterList so the Teuchos headers do not
@@ -123,8 +126,8 @@ namespace Teuchos{
 ///  diagnostic_flags: (see DICe_Types.h for definitions)
 DICE_LIB_DLL_EXPORT const int_t dice_correlate(scalar_t points[], int_t n_points,
                         int_t subset_size,
-                        intensity_t ref_img[], int_t ref_w, int_t ref_h,
-                        intensity_t def_img[], int_t def_w, int_t def_h,
+                        storage_t ref_img[], int_t ref_w, int_t ref_h,
+                        storage_t def_img[], int_t def_w, int_t def_h,
                         Teuchos::ParameterList * input_params=0, const bool update_params=false);
 
 /// \brief Function to execute a correlation on the data provided in points and the image arrays
@@ -169,8 +172,8 @@ DICE_LIB_DLL_EXPORT const int_t dice_correlate(scalar_t points[], int_t n_points
 ///  correlation parameters are set at the first invokation and will remain the same.
 ///  Note: no checking is done to ensure that the points array is the right size. This is up to the user.
 DICE_LIB_DLL_EXPORT const int_t dice_correlate_conformal(scalar_t points[],
-                        intensity_t ref_img[], int_t ref_w, int_t ref_h,
-                        intensity_t def_img[], int_t def_w, int_t def_h,
+                        storage_t ref_img[], int_t ref_w, int_t ref_h,
+                        storage_t def_img[], int_t def_w, int_t def_h,
                         const char* subset_file, const char* param_file=0,
                         const bool write_output=false);
 

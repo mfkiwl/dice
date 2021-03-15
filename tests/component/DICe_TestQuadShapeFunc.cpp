@@ -59,8 +59,8 @@ int main(int argc, char *argv[]) {
   // only print output if args are given (for testing the output is quiet)
   int_t iprint     = argc - 1;
   int_t errorFlag  = 0;
-  intensity_t max_intens = 260.0;
-  intensity_t min_intens = -5.0;
+  scalar_t max_intens = 260.0;
+  scalar_t min_intens = -5.0;
 #if DICE_USE_DOUBLE
   scalar_t errorTol = 1.0E-3;
 #else

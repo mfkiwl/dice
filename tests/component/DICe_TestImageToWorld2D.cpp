@@ -270,16 +270,16 @@ int main(int argc, char *argv[]) {
   //for(size_t i=0;i<image_x.size();++i){
   //  std::cout << i << " img_x " << image_x[i] << " img_y " << image_y[i] << " w_x " << world_x[i] << " w_y " << world_y[i] << " w_z " << world_z[i] << std::endl;
   //}
-  Teuchos::ArrayRCP<intensity_t> def_values(image_h*image_w,0.0);
-  Teuchos::ArrayRCP<intensity_t> ref_values(image_h*image_w,0.0);
+  Teuchos::ArrayRCP<scalar_t> def_values(image_h*image_w,0.0);
+  Teuchos::ArrayRCP<scalar_t> ref_values(image_h*image_w,0.0);
   for(int_t y=0;y<image_h;++y){
     for(int_t x=0;x<image_w;++x){
       ref_values[y*image_w+x] = world_ref_intensity_value(world_x[y*image_w+x],world_y[y*image_w+x],world_z[y*image_w+x]);
       def_values[y*image_w+x] = world_def_intensity_value(world_x[y*image_w+x],world_y[y*image_w+x],world_z[y*image_w+x]);
     }
   }
-  DICe::Image ref_img(image_w,image_h,ref_values);
-  DICe::Image def_img(image_w,image_h,def_values);
+  DICe::Scalar_Image ref_img(image_w,image_h,ref_values);
+  DICe::Scalar_Image def_img(image_w,image_h,def_values);
   //ref_img.write("ITWreference.tif");
   //def_img.write("ITWdeformed.tif");
 

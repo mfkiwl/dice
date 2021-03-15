@@ -201,7 +201,7 @@ int main(int argc, char *argv[]) {
       target_pts_x[i] = (*importer->target_pts_x())[i];
       target_pts_y[i] = (*importer->target_pts_y())[i];
     }
-    Teuchos::RCP<Image> ref_img = Teuchos::rcp(new Image(100,100,0.0));
+    Teuchos::RCP<Image> ref_img = Teuchos::rcp(new Image(100,100,0));
     Teuchos::RCP<Schema> schema = Teuchos::rcp(new Schema(target_pts_x,target_pts_y,dummy_subset_size,Teuchos::null,Teuchos::null,params));
     schema->set_ref_image(ref_img);
     schema->set_def_image(ref_img);

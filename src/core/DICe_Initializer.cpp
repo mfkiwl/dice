@@ -436,8 +436,7 @@ Field_Value_Initializer::initial_guess(const int_t subset_gid,
 Feature_Matching_Initializer::Feature_Matching_Initializer(Schema * schema,
   const int_t threshold_block_size):
   Initializer(schema),
-  threshold_block_size_(threshold_block_size),
-  first_call_(true){
+  threshold_block_size_(threshold_block_size){
   if(schema)
     TEUCHOS_TEST_FOR_EXCEPTION(schema->shape_function_type()==DICe::RIGID_BODY_SF,std::runtime_error,
     "Feature_Matching_Initializer cannot be used with rigid body shape function (only field value init is allowed)");
@@ -447,9 +446,6 @@ void
 Feature_Matching_Initializer::pre_execution_tasks(){
   assert(schema_->ref_img()!=Teuchos::null);
   assert(schema_->def_img()!=Teuchos::null);
-  if(first_call_){
-    prev_img_ = schema_->ref_img();
-  }
   // read both images and match features between them
   std::vector<scalar_t> left_x;
   std::vector<scalar_t> left_y;
@@ -462,14 +458,14 @@ Feature_Matching_Initializer::pre_execution_tasks(){
     std::stringstream outname;
     create_directory(".dice");
     outname << ".dice/fm_initializer_" << schema_->mesh()->get_comm()->get_rank() << ".png";
-    match_features(prev_img_,schema_->def_img(0),left_x,left_y,right_x,right_y,tol,outname.str(),threshold_block_size_);
+    match_features(schema_->prev_img(),schema_->def_img(0),left_x,left_y,right_x,right_y,tol,outname.str(),threshold_block_size_);
     int_t num_matches = left_x.size();
     DEBUG_MSG("number of features matched: " << num_matches);
     // test if not enough features were found, if so try a tighter tolerance
     if(num_matches < 50){
       DEBUG_MSG("did not find enough features, attempting again with tighter tolerance");
       const float tight_tol = 0.001f;
-      match_features(prev_img_,schema_->def_img(0),left_x,left_y,right_x,right_y,tight_tol,outname.str(),threshold_block_size_);
+      match_features(schema_->prev_img(),schema_->def_img(0),left_x,left_y,right_x,right_y,tight_tol,outname.str(),threshold_block_size_);
       num_matches = left_x.size();
     }
     TEUCHOS_TEST_FOR_EXCEPTION(num_matches < 10,std::runtime_error,"Error, not enough features matched for feature matching initializer./n"
@@ -492,8 +488,6 @@ Feature_Matching_Initializer::pre_execution_tasks(){
     u_[i] = right_x[i] - left_x[i];
     v_[i] = right_y[i] - left_y[i];
   }
-  prev_img_ = schema_->def_img(0);
-  first_call_ = false;
 }
 
 Status_Flag
@@ -635,8 +629,7 @@ Satellite_Geometry_Initializer::initial_guess(const int_t subset_gid,
 
 Image_Registration_Initializer::Image_Registration_Initializer(Schema * schema):
   Initializer(schema),
-  theta_(0.0),
-  first_call_(true){
+  theta_(0.0){
   if(schema)
     TEUCHOS_TEST_FOR_EXCEPTION(schema->shape_function_type()==DICe::RIGID_BODY_SF,std::runtime_error,
     "Image_Registration_Initializer cannot be used with rigid body shape function (only field value init is allowed)");
@@ -644,17 +637,14 @@ Image_Registration_Initializer::Image_Registration_Initializer(Schema * schema):
 
 void
 Image_Registration_Initializer::pre_execution_tasks(){
-  if(first_call_){
-    prev_img_ = schema_->ref_img();
-  }
-  assert(prev_img_!=Teuchos::null);
+  assert(schema_->prev_img()!=Teuchos::null);
   assert(schema_->def_img()!=Teuchos::null);
-  DEBUG_MSG("Image_Registration_Initializer::pre_execution_tasks(): prev image: " << prev_img_->file_name());
+  DEBUG_MSG("Image_Registration_Initializer::pre_execution_tasks(): prev image: " << schema_->prev_img()->file_name());
   DEBUG_MSG("Image_Registration_Initializer::pre_execution_tasks(): def image: " << schema_->def_img()->file_name());
-  TEUCHOS_TEST_FOR_EXCEPTION(!prev_img_->has_file_name(),std::runtime_error,"error, image registration initializer requires the images to have file names");
+  TEUCHOS_TEST_FOR_EXCEPTION(!schema_->prev_img()->has_file_name(),std::runtime_error,"error, image registration initializer requires the images to have file names");
   TEUCHOS_TEST_FOR_EXCEPTION(!schema_->def_img()->has_file_name(),std::runtime_error,"error, image registration initializer requires the images to have file names");
   cv::Mat temp = cv::imread(schema_->def_img()->file_name(), cv::ImreadModes::IMREAD_GRAYSCALE);
-  cv::Mat target = cv::imread(prev_img_->file_name(), cv::ImreadModes::IMREAD_GRAYSCALE);
+  cv::Mat target = cv::imread(schema_->prev_img()->file_name(), cv::ImreadModes::IMREAD_GRAYSCALE);
   int_t num_its = 500;
   scalar_t term_eps = 1E-8;
   cv::Mat warp =  cv::Mat::eye(2, 3, CV_32F);
@@ -670,8 +660,6 @@ Image_Registration_Initializer::pre_execution_tasks(){
   ecc_transform_ = ecc_transform_.inv();
   //  std::cout << ecc_transform_ << std::endl;
   theta_ = -1.0*std::asin(ecc_transform_.at<float>(0,1));
-  prev_img_ = schema_->def_img(0);
-  first_call_ = false;
 }
 
 Status_Flag
@@ -1136,19 +1124,19 @@ Optical_Flow_Initializer::initial_guess(const int_t subset_gid,
     return INITIALIZE_FAILED;
   }
 
-  Teuchos::ArrayRCP<intensity_t> output_img(schema_->prev_img()->num_pixels(),0.0);
-  for(int_t j=0;j<schema_->prev_img()->height();++j)
-  {
-    for(int_t i=0;i<schema_->prev_img()->width();++i)
-    {
-      if((i==pt_def_x[0]&&j==pt_def_y[0])||(i==pt_def_x[1]&&j==pt_def_y[1])){
-      //if((i==pt1_x_&&j==pt1_y_)||(i==pt2_x_&&j==pt2_y_)){
-        output_img[j*schema_->prev_img()->width()+i] = 255;
-      }else{
-        output_img[j*schema_->prev_img()->width()+i] = (*schema_->prev_img())(i,j);
-      }
-    }
-  }
+//  Teuchos::ArrayRCP<intensity_t> output_img(schema_->prev_img()->num_pixels(),0.0);
+//  for(int_t j=0;j<schema_->prev_img()->height();++j)
+//  {
+//    for(int_t i=0;i<schema_->prev_img()->width();++i)
+//    {
+//      if((i==pt_def_x[0]&&j==pt_def_y[0])||(i==pt_def_x[1]&&j==pt_def_y[1])){
+//      //if((i==pt1_x_&&j==pt1_y_)||(i==pt2_x_&&j==pt2_y_)){
+//        output_img[j*schema_->prev_img()->width()+i] = 255;
+//      }else{
+//        output_img[j*schema_->prev_img()->width()+i] = (*schema_->prev_img())(i,j);
+//      }
+//    }
+//  }
 
   // Note: these are additive displacements from the previous frame so add them to what's already in the array
   shape_function->insert_motion(initial_u_ + disp_x,initial_v_ + disp_y,initial_t_+ theta_12);

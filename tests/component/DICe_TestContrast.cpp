@@ -76,14 +76,14 @@ int main(int argc, char *argv[]) {
   scalar_t mean = 128.0;
   int_t num_levels = 10;
   for(int_t level=0;level <num_levels;++level){
-    Teuchos::ArrayRCP<intensity_t> intensities(width*height,0.0);
+    Teuchos::ArrayRCP<scalar_t> intensities(width*height,0);
     std::default_random_engine generator;
-    std::normal_distribution<intensity_t> distribution(mean,std_dev);
+    std::normal_distribution<scalar_t> distribution(mean,std_dev);
     for(int_t i=0;i<width*height;++i){
-      intensity_t value = distribution(generator);
-      intensities[i] = value;
+      scalar_t value = distribution(generator);
+      intensities[i] = value; // Could have negative values for intensity so need to use Scalar_Image
     }
-    Teuchos::RCP<DICe::Image> image = Teuchos::rcp(new DICe::Image(width,height,intensities));
+    Teuchos::RCP<DICe::Scalar_Image> image = Teuchos::rcp(new DICe::Scalar_Image(width,height,intensities));
     //image->write("contrast.tif");
     // create a subset
     Teuchos::RCP<DICe::Subset> subset = Teuchos::rcp(new DICe::Subset(50,50,50,50));
