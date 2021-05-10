@@ -298,6 +298,7 @@ Calibration::calibrate(const std::string & output_file,
   std::vector< Mat > rvecs, tvecs;
 
   double rms = 0.0;
+  double avg_epi_error = 0.0;
   if(num_cams()==1){
     rms = calibrateCamera(object_points_, intersection_points_[0],
       image_size_, cameraMatrix[0], distCoeffs[0],
@@ -366,7 +367,8 @@ Calibration::calibrate(const std::string & output_file,
     }
     epipolar_file.close();
     assert(npoints!=0);
-    std::cout << "Calibration::calibrate(): average epipolar error: " <<  err/npoints << std::endl;
+    avg_epi_error = err/npoints;
+    std::cout << "Calibration::calibrate(): average epipolar error: " <<  avg_epi_error << std::endl;
   }
 
   Teuchos::RCP<DICe::Camera_System> camera_system = Teuchos::rcp(new DICe::Camera_System());
@@ -412,7 +414,7 @@ Calibration::calibrate(const std::string & output_file,
     Teuchos::RCP<DICe::Camera> camera_ptr = Teuchos::rcp(new DICe::Camera(camera_info));
     camera_system->add_camera(camera_ptr);
   }
-
+  camera_system->set_avg_epipolar_error(avg_epi_error);
   camera_system->set_system_type(Camera_System::OPENCV);
   if(!output_file.empty())
     camera_system->write_camera_system_file(output_file);
@@ -567,6 +569,8 @@ Calibration::extract_dot_target_points(){
   const int_t orig_thresh_start = input_params_.get<int_t>(opencv_server_threshold_start,20);
   const int_t orig_thresh_end =   input_params_.get<int_t>(opencv_server_threshold_end,250);
   const int_t orig_thresh_step =  input_params_.get<int_t>(opencv_server_threshold_step,5);
+  if(!input_params_.isParameter(opencv_server_min_blob_size))
+    input_params_.set<int_t>(opencv_server_min_blob_size,100);
   scalar_t include_image_set_tol = 0.75; //the search must have found at least 75% of the total to be included
   for (size_t i_image = 0; i_image < num_images(); i_image++){
     //go through each of the camera's images (note only two camera calibration is currently supported)
@@ -590,15 +594,27 @@ Calibration::extract_dot_target_points(){
       int_t return_thresh = orig_thresh_start;
       int_t error_code = opencv_dot_targets(img, input_params_,
         key_points,img_points,grd_points,return_thresh);
+
       // check if extraction failed
       if(error_code==0){
-        input_params_.set(opencv_server_threshold_start,return_thresh);
+        input_params_.set(opencv_server_threshold_start,return_thresh); // make all the values the same so the auto thresholding is skipped next time
         input_params_.set(opencv_server_threshold_end,return_thresh);
         input_params_.set(opencv_server_threshold_step,return_thresh);
       }else if(i_image!=0&&error_code==1){
-        input_params_.set(opencv_server_threshold_start,orig_thresh_start);
+        input_params_.set(opencv_server_threshold_start,orig_thresh_start); // reset the thresholds and re-run the auto thresholding routine
         input_params_.set(opencv_server_threshold_end,orig_thresh_end);
         input_params_.set(opencv_server_threshold_step,orig_thresh_step);
+        error_code = opencv_dot_targets(img, input_params_,
+          key_points,img_points,grd_points,return_thresh);
+        if(error_code==0){
+          input_params_.set(opencv_server_threshold_start,return_thresh);
+          input_params_.set(opencv_server_threshold_end,return_thresh);
+          input_params_.set(opencv_server_threshold_step,return_thresh);
+        }
+      }else if(i_image==0&&error_code==1){
+        // check to see if the min_blob_size needs to be adjusted, first try 10 (smaller)
+        input_params_.set<int_t>(opencv_server_min_blob_size,10);
+        DEBUG_MSG("Calibration::extract_dot_target_points(): resetting the min_blob_size to 10 and trying again.");
         error_code = opencv_dot_targets(img, input_params_,
           key_points,img_points,grd_points,return_thresh);
         if(error_code==0){

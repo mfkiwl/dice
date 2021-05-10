@@ -68,6 +68,8 @@ const char* const opencv_server_filter_dot_targets = "dot_targets";
 const char* const opencv_server_filter_epipolar_line = "epipolar_line";
 const char* const opencv_server_filter_tracklib = "tracklib";
 const char* const opencv_server_filter_none = "none"; // used to display the original image with no filter
+const char* const opencv_server_filter_brightness = "brightness";
+const char* const opencv_server_filter_equalize_hist = "equalize_hist";
 const char* const opencv_server_filter_background = "background"; // create a background image to subtract from subsequent frames
 
 /// Filter parameters
@@ -78,6 +80,7 @@ const char* const opencv_server_threshold_start = "threshold_start";
 const char* const opencv_server_threshold_end = "threshold_end";
 const char* const opencv_server_threshold_step = "threshold_step";
 const char* const opencv_server_block_size = "block_size";
+const char* const opencv_server_min_blob_size = "min_blob_size";
 const char* const opencv_server_binary_constant = "binary_constant";
 const char* const opencv_server_dot_tol = "dot_tol";
 const char* const opencv_server_use_adaptive_threshold = "use_adaptive_threshold";

@@ -66,7 +66,7 @@ namespace DICe{
 DICE_LIB_DLL_EXPORT
 Teuchos::ParameterList parse_filter_string(int argc, char *argv[]){
   DEBUG_MSG("opencv_server::parse_filter_string():");
-  DEBUG_MSG("User specified " << argc << " arguments");
+//  DEBUG_MSG("User specified " << argc << " arguments");
 //  for(int_t i=0;i<argc;++i){
 //    DEBUG_MSG(argv[i]);
 //  }
@@ -146,7 +146,7 @@ Teuchos::ParameterList parse_filter_string(int argc, char *argv[]){
         filters.set(filter_name,filter_params);
       filter_params = Teuchos::ParameterList();
       filter_name = arg;
-      if(filter_name=="none")  // save off an empty parameter list for filter:none
+      if(filter_name=="none"||filter_name=="equalize_hist")  // save off an empty parameter list for filter:none
         filters.set(filter_name,filter_params);
       continue;
     } // end found filter keyword
@@ -308,6 +308,14 @@ int_t opencv_server(int argc, char *argv[]){
       // switch statement on the filters, pass the options as an argument and the opencv image mat
       if(filter==opencv_server_filter_none||filter==opencv_server_filter_background){
         // no op
+      }
+      else if(filter==opencv_server_filter_equalize_hist){
+        cv::equalizeHist(img,img);
+      }
+      else if(filter==opencv_server_filter_brightness){
+        int brightness = options.get<int_t>("brightness",0);
+        DEBUG_MSG("opencv_server(): adjsting brightness using value " << brightness);
+        img.convertTo(img,-1,1,brightness);
       }
       else if(filter==opencv_server_filter_binary_threshold){
         error_code = opencv_binary_threshold(img,options);
@@ -583,7 +591,20 @@ int_t opencv_dot_targets(cv::Mat & img,
   std::vector<cv::KeyPoint> key_points;
   std::vector<cv::KeyPoint> img_points;
   std::vector<cv::KeyPoint> grd_points;
-  return opencv_dot_targets(img,options,key_points,img_points,grd_points, return_thresh);
+  if(!options.isParameter(opencv_server_min_blob_size))
+    options.set<int_t>(opencv_server_min_blob_size,100);
+  int_t error_code = opencv_dot_targets(img,options,key_points,img_points,grd_points, return_thresh);
+  if(error_code!=0){
+    DEBUG_MSG("opencv_dot_targets(): resetting the min_blob_size to 10 and trying again.");
+    options.set<int_t>(opencv_server_min_blob_size,10);
+    error_code = opencv_dot_targets(img,options,key_points,img_points,grd_points, return_thresh);
+//    if(error_code!=0){
+//      DEBUG_MSG("opencv_dot_targets(): resetting the min_blob_size to 500 and trying again.");
+//      options.set<int_t>(opencv_server_min_blob_size,500);
+//      error_code = opencv_dot_targets(img,options,key_points,img_points,grd_points, return_thresh);
+//    }
+  }
+  return error_code;
 }
 
 DICE_LIB_DLL_EXPORT
@@ -601,7 +622,6 @@ int_t opencv_dot_targets(Mat & img,
   std::cout << "--- opencv_dot_targets(): options:" << std::endl;
   options.print(std::cout);
 #endif
-
 
   // clone the input image so that we have a copy of the original
   Mat img_cpy = img.clone();
@@ -632,8 +652,8 @@ int_t opencv_dot_targets(Mat & img,
   //  cv::THRESH_TRIANGLE = 16
   int threshold_mode = options.get<int_t>(opencv_server_threshold_mode,0);
   //std::cout << "opencv_dot_targets(): option, threshold mode:   " << threshold_mode << std::endl;
-  int min_blob_size = 100;
-
+  int min_blob_size = options.get<int_t>(opencv_server_min_blob_size,100);
+  DEBUG_MSG("using min_blob_size: " << min_blob_size);
   // establish the calibration plate properties
   TEUCHOS_TEST_FOR_EXCEPTION(!options.isParameter(DICe::num_cal_fiducials_x),std::runtime_error,"");
   TEUCHOS_TEST_FOR_EXCEPTION(!options.isParameter(DICe::num_cal_fiducials_y),std::runtime_error,"");
@@ -698,17 +718,19 @@ int_t opencv_dot_targets(Mat & img,
   // chances are that this indicates p thresholding problem to begin with
   if (key_points.size() != 3) {
     // try again to see if the markers a too small, if so enable smaller blob sizes and try again
-    min_blob_size = 10;
-    get_dot_markers(img_cpy,key_points,i_thresh,invert,options,min_blob_size);
-    if(key_points.size() !=3){
-      // try a larger min blob size
-      min_blob_size = 500;
-      get_dot_markers(img_cpy,key_points,i_thresh,invert,options,min_blob_size);
-      if(key_points.size() != 3){
-        std::cout << "*** warning: unable to identify three keypoints, other points will not be extracted" << std::endl;
-        keypoints_found = false;
-      }
-    }
+//    min_blob_size = 10;
+//    get_dot_markers(img_cpy,key_points,i_thresh,invert,options,min_blob_size);
+//    if(key_points.size() !=3){
+      std::cout << "*** warning: unable to identify three keypoints, other points will not be extracted" << std::endl;
+      keypoints_found = false;
+//      // try a larger min blob size
+//      min_blob_size = 500;
+//      get_dot_markers(img_cpy,key_points,i_thresh,invert,options,min_blob_size);
+//      if(key_points.size() != 3){
+//        std::cout << "*** warning: unable to identify three keypoints, other points will not be extracted" << std::endl;
+//        keypoints_found = false;
+//      }
+//    }
   }
   Point cvpoint;
   if(preview_thresh){
@@ -856,6 +878,7 @@ void get_dot_markers(cv::Mat img,
 
   // setup the blob detector
   SimpleBlobDetector::Params params;
+  params.filterByArea = true;
   params.maxArea = 10e4;
   params.minArea = min_size;
   cv::Ptr<cv::SimpleBlobDetector> detector = cv::SimpleBlobDetector::create(params);
@@ -882,9 +905,53 @@ void get_dot_markers(cv::Mat img,
   bitwise_not(bi_src, not_src);
 
   // detect dots on the appropriately inverted image
-  if (invert) detector->detect(not_src, keypoints);
-  else detector->detect(bi_src, keypoints);
+  Mat labelImage(img.size(),CV_32S);
+  Mat stats, centroids;
+  int nLabels = 0;
+
+  // detect dots on the appropriately inverted image
+  if (invert){
+    detector->detect(not_src, keypoints);
+    nLabels = connectedComponentsWithStats(bi_src, labelImage, stats, centroids, 8, CV_32S);
+  }else{
+    detector->detect(bi_src, keypoints);
+    nLabels = connectedComponentsWithStats(not_src, labelImage, stats, centroids, 8, CV_32S);
+  }
   DEBUG_MSG("get_dot_markers(): num keypoints " << keypoints.size());
+  if(keypoints.size()==0) return;
+
+  if(keypoints.size()==3&&nLabels>=3){
+    float avg_diameter = 0.0f;
+    for(size_t i=0;i<keypoints.size();++i){
+      int x = keypoints[i].pt.x;
+      int y = keypoints[i].pt.y;
+      DEBUG_MSG("Keypoint: " << i << " " << keypoints[i].pt.x << " " << keypoints[i].pt.y << " blob size " << keypoints[i].size);
+      int label = labelImage.at<int>(y,x);
+      DEBUG_MSG("label " << label);
+      int psize = stats.at<int>(label,CC_STAT_AREA);
+      DEBUG_MSG("new size " << psize);
+      keypoints[i].size = psize;
+      DEBUG_MSG("Keypoint: " << i << " updated size " << keypoints[i].size);
+      avg_diameter += keypoints[i].size;
+    }
+    avg_diameter /= keypoints.size();
+    DEBUG_MSG("get_dot_markers(): avg keypoint diameter " << avg_diameter);
+    size_t i = keypoints.size();
+    while (i--) {
+      // remove the keypoint from the vector
+      if(keypoints[i].size<=0.0){
+  //      DEBUG_MSG("get_dot_markers(): removing keypoint " << i << " due to keypoint size == 0.0");
+        keypoints.erase(keypoints.begin() + i);
+      }
+      if(std::abs(keypoints[i].size-avg_diameter)/avg_diameter>0.30){
+  //      DEBUG_MSG("get_dot_markers(): removing keypoint " << i << " due to keypoint size >30% difference in diameter from avg");
+        keypoints.erase(keypoints.begin() + i);
+      }
+    }
+    DEBUG_MSG("get_dot_markers(): num keypoints " << keypoints.size());
+  }
+//  for (size_t i = 0;i<keypoints.size();++i)
+//    DEBUG_MSG("get_dot_markers(): keypoint " << i << " diameter " << keypoints[i].size);
 }
 
 //calculate the transformation coefficients

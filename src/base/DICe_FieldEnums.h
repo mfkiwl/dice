@@ -117,6 +117,7 @@ Field_Name
   NORMAL_STRETCH_YY,
   LAGRANGE_MULTIPLIER,
   RESIDUAL,
+  GLOBAL_GRAY_DIFF,
   MIXED_RESIDUAL,
   LHS,
   MIXED_LHS,
@@ -147,6 +148,10 @@ Field_Name
   QUAD_J,
   QUAD_K,
   QUAD_L,
+  EPI_A,
+  EPI_B,
+  EPI_C,
+  CROSS_EPI_ERROR,
   FIELD_1,
   FIELD_2,
   FIELD_3,
@@ -482,6 +487,8 @@ const Field_Spec ROTATION_Z_NM1_FS(field_enums::SCALAR_FIELD_TYPE,field_enums::R
 /// field spec
 const Field_Spec RESIDUAL_FS(field_enums::VECTOR_FIELD_TYPE,field_enums::RESIDUAL,field_enums::NODE_RANK,field_enums::STATE_N_PLUS_ONE,true,true);
 /// field spec
+const Field_Spec GLOBAL_GRAY_DIFF_FS(field_enums::SCALAR_FIELD_TYPE,field_enums::GLOBAL_GRAY_DIFF,field_enums::NODE_RANK,field_enums::NO_FIELD_STATE,true,false);
+/// field spec
 const Field_Spec LHS_FS(field_enums::VECTOR_FIELD_TYPE,field_enums::LHS,field_enums::NODE_RANK,field_enums::NO_FIELD_STATE,true);
 /// field spec
 const Field_Spec LAGRANGE_MULTIPLIER_FS(field_enums::SCALAR_FIELD_TYPE,field_enums::LAGRANGE_MULTIPLIER,field_enums::NODE_RANK,field_enums::STATE_N_PLUS_ONE,true,true);
@@ -557,6 +564,14 @@ const Field_Spec QUAD_J_FS(field_enums::SCALAR_FIELD_TYPE,field_enums::QUAD_J,fi
 const Field_Spec QUAD_K_FS(field_enums::SCALAR_FIELD_TYPE,field_enums::QUAD_K,field_enums::NODE_RANK,field_enums::NO_FIELD_STATE,true);
 /// field spec
 const Field_Spec QUAD_L_FS(field_enums::SCALAR_FIELD_TYPE,field_enums::QUAD_L,field_enums::NODE_RANK,field_enums::NO_FIELD_STATE,true);
+/// field spec
+const Field_Spec EPI_A_FS(field_enums::SCALAR_FIELD_TYPE,field_enums::EPI_A,field_enums::NODE_RANK,field_enums::NO_FIELD_STATE,true);
+/// field spec
+const Field_Spec EPI_B_FS(field_enums::SCALAR_FIELD_TYPE,field_enums::EPI_B,field_enums::NODE_RANK,field_enums::NO_FIELD_STATE,true);
+/// field spec
+const Field_Spec EPI_C_FS(field_enums::SCALAR_FIELD_TYPE,field_enums::EPI_C,field_enums::NODE_RANK,field_enums::NO_FIELD_STATE,true);
+/// field spec
+const Field_Spec CROSS_EPI_ERROR_FS(field_enums::SCALAR_FIELD_TYPE,field_enums::CROSS_EPI_ERROR,field_enums::NODE_RANK,field_enums::NO_FIELD_STATE,true);
 /// field spec
 const Field_Spec FIELD_1_FS(field_enums::SCALAR_FIELD_TYPE,field_enums::FIELD_1,field_enums::NODE_RANK,field_enums::NO_FIELD_STATE,true);
 /// field spec
@@ -687,7 +702,7 @@ const Field_Spec ROT_TRANS_3D_TRANS_Y_FS(field_enums::SCALAR_FIELD_TYPE, field_e
 const Field_Spec ROT_TRANS_3D_TRANS_Z_FS(field_enums::SCALAR_FIELD_TYPE, field_enums::ROT_TRANS_3D_TRANS_Z, field_enums::NODE_RANK, field_enums::NO_FIELD_STATE, true);
 
 /// the number of fields that have been defined (must be set at compile time)
-const int_t num_fields_defined = 137;
+const int_t num_fields_defined = 141;
 
 /// array of all the valid field specs
 const field_enums::Field_Spec fs_spec_vec[num_fields_defined] = {
@@ -768,6 +783,10 @@ const field_enums::Field_Spec fs_spec_vec[num_fields_defined] = {
     QUAD_J_FS,
     QUAD_K_FS,
     QUAD_L_FS,
+    EPI_A_FS,
+    EPI_B_FS,
+    EPI_C_FS,
+    CROSS_EPI_ERROR_FS,
     FIELD_1_FS,
     FIELD_2_FS,
     FIELD_3_FS,

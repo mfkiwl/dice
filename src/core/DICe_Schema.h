@@ -353,6 +353,14 @@ public:
   int_t initialize_cross_correlation(Teuchos::RCP<Triangulation> tri,
     const Teuchos::RCP<Teuchos::ParameterList> & input_params);
 
+  /// correlate point by point branching out by neighbors
+  void space_fill_correlate(const int_t seed_gid,
+    const std::vector<int_t> & in_gids,
+    std::vector<int_t> & out_gids,
+    const int_t num_neigh,
+    Teuchos::RCP<kd_tree_2d_t> kd_tree,
+    const scalar_t & epi_error_tol);
+
   /// Save off the q and r fields once the mapping from left to right image is known
   void save_cross_correlation_fields();
 
@@ -585,6 +593,12 @@ public:
   Initialization_Method initialization_method()const{
     return initialization_method_;
   }
+
+  /// Returns the initilaization method used for cross-correlation (see DICe_Types.h for valid values)
+  Initialization_Method cross_initialization_method()const{
+    return cross_initialization_method_;
+  }
+
 
   /// Returns the projection method (see DICe_Types.h for valid values)
   Projection_Method projection_method()const{
@@ -1161,6 +1175,8 @@ private:
   Optimization_Method optimization_method_;
   /// DICe::Initialization_Method
   Initialization_Method initialization_method_;
+  /// DICe::Initialization_Method
+  Initialization_Method cross_initialization_method_;
   /// DICe::Projection_Method
   Projection_Method projection_method_;
   /// Analysis type

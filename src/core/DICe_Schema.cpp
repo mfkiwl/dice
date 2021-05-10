@@ -48,6 +48,7 @@
 #include <DICe_ImageIO.h>
 #include <DICe_FFT.h>
 #include <DICe_Triangulation.h>
+#include <DICe_Feature.h>
 #include <DICe_Simplex.h>
 #if DICE_ENABLE_NETCDF
   #include <DICe_NetCDF.h>
@@ -177,7 +178,7 @@ Schema::swap_def_prev_images(){
 
 void
 Schema::set_def_image(const std::string & defName){
-  DEBUG_MSG("Schema::set_def_image(): Resetting the deformed image using a file name " << defName);
+  DEBUG_MSG("Schema::set_def_image(): setting the deformed image using file name " << defName);
 //  swap_def_prev_images();
   assert(def_imgs_.size()>0);
   Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
@@ -304,7 +305,7 @@ Schema::set_def_image(const std::string & defName){
 void
 Schema::set_def_image(Teuchos::RCP<Image> img,
   const int_t id){
-  DEBUG_MSG("Schema::set_def_image() Resetting the deformed image (using an Image object) for sub image id " << id);
+  DEBUG_MSG("Schema::set_def_image(): resetting the deformed image (using an Image object) for sub image id " << id);
 //  swap_def_prev_images();
   assert(def_imgs_.size()>0);
   assert(id<(int_t)def_imgs_.size());
@@ -317,7 +318,7 @@ Schema::set_def_image(Teuchos::RCP<Image> img,
   }
   if(def_image_rotation_!=ZERO_DEGREES){
     Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
-    imgParams->set(DICe::compute_image_gradients,true); // automatically compute the gradients if the ref image is changed
+    imgParams->set(DICe::compute_image_gradients,true); // automatically compute the gradients
     imgParams->set(DICe::gradient_method,gradient_method_);
     def_imgs_[id] = def_imgs_[id]->apply_rotation(def_image_rotation_,imgParams);
   }
@@ -328,14 +329,14 @@ Schema::set_def_image(const int_t img_width,
   const int_t img_height,
   const Teuchos::ArrayRCP<storage_t> defRCP,
   const int_t id){
-  DEBUG_MSG("Schema::set_def_image() Resetting the deformed image using an ArrayRCP");
+  DEBUG_MSG("Schema::set_def_image(): setting the deformed image using an array of intensity values");
 //  swap_def_prev_images();
   assert(def_imgs_.size()>0);
   assert(id<(int_t)def_imgs_.size());
   TEUCHOS_TEST_FOR_EXCEPTION(img_width<=0,std::runtime_error,"");
   TEUCHOS_TEST_FOR_EXCEPTION(img_height<=0,std::runtime_error,"");
   Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
-  imgParams->set(DICe::compute_image_gradients,compute_ref_gradients_); // automatically compute the gradients if the ref image is changed
+  imgParams->set(DICe::compute_image_gradients,compute_ref_gradients_);
   imgParams->set(DICe::gradient_method,gradient_method_);
   imgParams->set(DICe::gauss_filter_mask_size,gauss_filter_mask_size_);
   imgParams->set(DICe::gradient_method,gradient_method_);
@@ -348,7 +349,7 @@ Schema::set_def_image(const int_t img_width,
 
 void
 Schema::set_ref_image(const std::string & refName){
-  DEBUG_MSG("Schema:  Resetting the reference image");
+  DEBUG_MSG("Schema: setting the reference image to " << refName);
   Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
   imgParams->set(DICe::compute_image_gradients,compute_ref_gradients_); // automatically compute the gradients if the ref image is changed
   imgParams->set(DICe::gauss_filter_images,gauss_filter_images_);
@@ -395,7 +396,7 @@ void
 Schema::set_ref_image(const int_t img_width,
   const int_t img_height,
   const Teuchos::ArrayRCP<storage_t> refRCP){
-  DEBUG_MSG("Schema:  Resetting the reference image");
+  DEBUG_MSG("Schema: setting the reference image using width, height, and intensity array");
   TEUCHOS_TEST_FOR_EXCEPTION(img_width<=0,std::runtime_error,"");
   TEUCHOS_TEST_FOR_EXCEPTION(img_height<=0,std::runtime_error,"");
   Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
@@ -419,8 +420,12 @@ Schema::set_ref_image(const int_t img_width,
 
 void
 Schema::set_ref_image(Teuchos::RCP<Image> img){
-  DEBUG_MSG("Schema::set_ref_image() Resetting the reference image");
-  ref_img_ = img;
+  if(ref_img_==Teuchos::null)
+    DEBUG_MSG("Schema::set_ref_image() setting the reference image to " << img->file_name());
+  else
+    DEBUG_MSG("Schema::set_ref_image() resetting the reference image from " << ref_img_->file_name() << " to " << img->file_name());
+  ref_img_ = Teuchos::rcp( new Image(img)); // always reallocate the ref image as a deep copy
+  //ref_img_ = img;
   if(gauss_filter_images_){
     if(!ref_img_->has_gauss_filter()) // the filter may have alread been applied to the image
       ref_img_->gauss_filter(gauss_filter_mask_size_);
@@ -430,7 +435,7 @@ Schema::set_ref_image(Teuchos::RCP<Image> img){
   }
   if(ref_image_rotation_!=ZERO_DEGREES){
     Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
-    imgParams->set(DICe::compute_image_gradients,true); // automatically compute the gradients if the ref image is changed
+    imgParams->set(DICe::compute_image_gradients,true); // automatically compute the gradients for rotations
     imgParams->set(DICe::gradient_method,gradient_method_);
     ref_img_ = ref_img_->apply_rotation(ref_image_rotation_,imgParams);
   }
@@ -635,10 +640,10 @@ Schema::set_params(const Teuchos::RCP<Teuchos::ParameterList> & params){
     compute_ref_gradients_ = true;
     compute_def_gradients_ = true;
   }
-  if(use_incremental_formulation_){ // force gradient calcs to be on for incremental
-    compute_ref_gradients_ = true;
-    compute_def_gradients_ = true;
-  }
+//  if(use_incremental_formulation_){ // force gradient calcs to be on for incremental
+//    compute_ref_gradients_ = true;
+//    compute_def_gradients_ = true;
+//  }
   TEUCHOS_TEST_FOR_EXCEPTION(!diceParams->isParameter(DICe::projection_method),std::runtime_error,"");
   projection_method_ = diceParams->get<Projection_Method>(DICe::projection_method);
   TEUCHOS_TEST_FOR_EXCEPTION(!diceParams->isParameter(DICe::interpolation_method),std::runtime_error,"");
@@ -658,6 +663,9 @@ Schema::set_params(const Teuchos::RCP<Teuchos::ParameterList> & params){
   correlation_routine_ = diceParams->get<Correlation_Routine>(DICe::correlation_routine);
   TEUCHOS_TEST_FOR_EXCEPTION(!diceParams->isParameter(DICe::initialization_method),std::runtime_error,"");
   initialization_method_ = diceParams->get<Initialization_Method>(DICe::initialization_method);
+  TEUCHOS_TEST_FOR_EXCEPTION(!diceParams->isParameter(DICe::cross_initialization_method),std::runtime_error,"");
+  cross_initialization_method_ = diceParams->get<Initialization_Method>(DICe::cross_initialization_method);
+  TEUCHOS_TEST_FOR_EXCEPTION(use_nonlinear_projection_&&cross_initialization_method_==USE_SPACE_FILLING_ITERATIONS,std::runtime_error,"");
   TEUCHOS_TEST_FOR_EXCEPTION(!diceParams->isParameter(DICe::max_solver_iterations_robust),std::runtime_error,"");
   max_solver_iterations_robust_ = diceParams->get<int_t>(DICe::max_solver_iterations_robust);
   TEUCHOS_TEST_FOR_EXCEPTION(!diceParams->isParameter(DICe::robust_solver_tolerance),std::runtime_error,"");
@@ -766,6 +774,15 @@ Schema::set_params(const Teuchos::RCP<Teuchos::ParameterList> & params){
       ppParams->setEntry(it->first,it->second);
     }
     Teuchos::RCP<Plotly_Contour_Post_Processor> pc_ptr = Teuchos::rcp (new Plotly_Contour_Post_Processor(ppParams));
+    post_processors_.push_back(pc_ptr);
+  }
+  if(diceParams->isParameter(DICe::post_process_crack_locator)){
+    Teuchos::ParameterList sublist = diceParams->sublist(DICe::post_process_crack_locator);
+    Teuchos::RCP<Teuchos::ParameterList> ppParams = Teuchos::rcp( new Teuchos::ParameterList());
+    for(Teuchos::ParameterList::ConstIterator it=sublist.begin();it!=sublist.end();++it){
+      ppParams->setEntry(it->first,it->second);
+    }
+    Teuchos::RCP<Crack_Locator_Post_Processor> pc_ptr = Teuchos::rcp (new Crack_Locator_Post_Processor(ppParams));
     post_processors_.push_back(pc_ptr);
   }
   if(diceParams->isParameter(DICe::post_process_nlvc_strain)){
@@ -1369,6 +1386,10 @@ Schema::create_mesh_fields(){
   mesh_->create_field(field_enums::CONDITION_NUMBER_FS);
   mesh_->create_field(field_enums::PROJECTION_AUG_X_FS);
   mesh_->create_field(field_enums::PROJECTION_AUG_Y_FS);
+  mesh_->create_field(field_enums::EPI_A_FS);
+  mesh_->create_field(field_enums::EPI_B_FS);
+  mesh_->create_field(field_enums::EPI_C_FS);
+  mesh_->create_field(field_enums::CROSS_EPI_ERROR_FS);
   mesh_->create_field(field_enums::FIELD_1_FS);
   mesh_->create_field(field_enums::FIELD_2_FS);
   mesh_->create_field(field_enums::FIELD_3_FS);
@@ -1440,6 +1461,14 @@ Schema::execute_cross_correlation(){
     TEUCHOS_TEST_FOR_EXCEPTION(true,std::runtime_error,"Error, cross-correlation has not been implemented for global DIC");
     return 0;
   }
+  if(cross_initialization_method_==USE_SPACE_FILLING_ITERATIONS){
+    DEBUG_MSG("Schema::execute_cross_correlation(): skipping cross-correlation since initialization method is USE_SPACE_FILLING_ITERATIONS");
+    return 0;
+  }
+
+  TEUCHOS_TEST_FOR_EXCEPTION(cross_initialization_method_!=USE_PLANAR_PROJECTION,std::runtime_error,
+    "at this point USE_PLANAR_PROJECTION is the only valid cross init method");
+
   // make sure the data is ready to go since it may have been initialized externally by an api
   assert(is_initialized_);
   assert(global_num_subsets_>0);
@@ -1465,7 +1494,7 @@ Schema::execute_cross_correlation(){
 
   // project the right image onto the left if requested
   if(use_nonlinear_projection_){
-    TEUCHOS_TEST_FOR_EXCEPTION(initialization_method_==USE_SATELLITE_GEOMETRY,std::runtime_error,"");
+    TEUCHOS_TEST_FOR_EXCEPTION(orig_init_method==USE_SATELLITE_GEOMETRY,std::runtime_error,"");
     // the nonlinear projection may not be good enough to initialize so start with a search window
     Teuchos::RCP<Local_Shape_Function> shape_function = shape_function_factory(this);
     for(int_t subset_index=0;subset_index<local_num_subsets_;++subset_index){
@@ -1538,6 +1567,20 @@ Schema::execute_cross_correlation(){
     mesh_->get_field(SUBSET_DISPLACEMENT_Y_FS)->update(1.0,*proj_aug_y,1.0);
   }
 
+  // find any points that weren't reached by the space filling and turn them off
+  for(int_t i=0;i<local_num_subsets_;++i){
+    float a = local_field_value(i,EPI_A_FS);
+    float b = local_field_value(i,EPI_B_FS);
+    float c = local_field_value(i,EPI_C_FS);
+    float stereo_x = local_field_value(i,SUBSET_COORDINATES_X_FS) + local_field_value(i,SUBSET_DISPLACEMENT_X_FS);
+    float stereo_y = local_field_value(i,SUBSET_COORDINATES_Y_FS) + local_field_value(i,SUBSET_DISPLACEMENT_Y_FS);
+    const float dist = (std::abs(a*stereo_x+b*stereo_y+c)/std::sqrt(a*a+b*b));
+    local_field_value(i,CROSS_EPI_ERROR_FS) = dist;
+//    if(dist>epi_dist_tol){
+//      local_field_value(i,SIGMA_FS) = -1.0;
+//    }
+  }
+
   // reset the neighbor ids fiel and initialization method
   //neigh_ids->update(1.0,*original_neigh_ids,0.0);
   initialization_method_ = orig_init_method;
@@ -1600,7 +1643,7 @@ Schema::execute_correlation(){
 #endif
 
   // if the formulation is incremental, clear the displacement fields
-  if(use_incremental_formulation_){
+  if(use_incremental_formulation_&&frame_id_>first_frame_id_){
     mesh_->get_field(SUBSET_DISPLACEMENT_X_FS)->put_scalar(0.0);
     mesh_->get_field(SUBSET_DISPLACEMENT_Y_FS)->put_scalar(0.0);
   }
@@ -1678,6 +1721,9 @@ Schema::execute_correlation(){
       const int_t subset_gid = this_proc_gid_order_[subset_index];
       const int_t subset_lid = subset_local_id(subset_gid);
       check_for_blocking_subsets(subset_gid);
+      if(use_incremental_formulation_&&frame_id_>first_frame_id_){
+        obj_vec_[subset_lid]->subset()->initialize(ref_img_,REF_INTENSITIES);
+      }
       generic_correlation_routine(obj_vec_[subset_lid]);
     }
     if(output_deformed_subset_images_)
@@ -1694,12 +1740,18 @@ Schema::execute_correlation(){
   }
 
   // accumulate the displacements
-  if(use_incremental_formulation_){
+  // for incremental, the displacement field gets zeroed out each frame and
+  // another vector is needed to store the total displacement. Once execute correlation is completed, the
+  // accumulated displacements are temporarily put back in the displacement field for writing the output
+  // before it gets zeroed again for the next frame
+  if(use_incremental_formulation_&&frame_id_>first_frame_id_){
     const int_t spa_dim = mesh_->spatial_dimension();
     Teuchos::RCP<DICe::MultiField> accumulated_disp = mesh_->get_field(ACCUMULATED_DISP_FS);
     for(int_t i=0;i<local_num_subsets_;++i){
       accumulated_disp->local_value(i*spa_dim+0) += local_field_value(i,SUBSET_DISPLACEMENT_X_FS);
       accumulated_disp->local_value(i*spa_dim+1) += local_field_value(i,SUBSET_DISPLACEMENT_Y_FS);
+      local_field_value(i,SUBSET_DISPLACEMENT_X_FS) = accumulated_disp->local_value(i*spa_dim+0);
+      local_field_value(i,SUBSET_DISPLACEMENT_Y_FS) = accumulated_disp->local_value(i*spa_dim+1);
     }
   }
   update_frame_id();
@@ -1739,7 +1791,7 @@ Schema::execute_post_processors(){
   // compute post-processed quantities
   for(size_t i=0;i<post_processors_.size();++i){
     post_processors_[i]->update_current_frame_id(frame_id_-frame_skip_); // decrement frame skip since the frame id got updated by execute_correlation
-    post_processors_[i]->execute();
+    post_processors_[i]->execute(ref_img_,def_imgs_[0]);
   }
   DEBUG_MSG("[PROC " << comm_->get_rank() << "] post processing complete");
 }
@@ -2744,27 +2796,477 @@ Schema::estimate_resolution_error(const Teuchos::RCP<Teuchos::ParameterList> & c
   } // end mag loop
 }
 
+/// correlate point by point branching out by neighbors
+void
+Schema::space_fill_correlate(const int_t seed_gid,
+  const std::vector<int_t> & in_gids,
+  std::vector<int_t> & out_gids,
+  const int_t num_neigh,
+  Teuchos::RCP<kd_tree_2d_t> kd_tree,
+  const scalar_t & epi_error_tol){
+
+  TEUCHOS_TEST_FOR_EXCEPTION(in_gids.size()==0,std::runtime_error,"");
+  out_gids.clear();
+
+  for(size_t s=0;s<in_gids.size();++s){
+    const int_t subset_gid = in_gids[s];
+    DEBUG_MSG("Schema::space_fill_correlate: spreading to neighbors of SUBSET " << subset_gid);
+    // get the u and v values for this subset
+    const scalar_t subset_u = global_field_value(subset_gid,SUBSET_DISPLACEMENT_X_FS);
+    const scalar_t subset_v = global_field_value(subset_gid,SUBSET_DISPLACEMENT_Y_FS);
+    // find neighbors of this subset
+    std::vector<size_t> ret_index(num_neigh);
+    std::vector<scalar_t> out_dist_sqr(num_neigh);
+    scalar_t query_pt[2];
+    query_pt[0] = global_field_value(subset_gid,SUBSET_COORDINATES_X_FS);
+    query_pt[1] = global_field_value(subset_gid,SUBSET_COORDINATES_Y_FS);
+    kd_tree->knnSearch(&query_pt[0],num_neigh,&ret_index[0],&out_dist_sqr[0]);
+    for(int_t i=0;i<num_neigh;++i){
+      const int_t neigh_id = ret_index[i];
+      const int_t neigh_gid = subset_global_id(neigh_id);
+      if(local_field_value(neigh_id,NEIGHBOR_ID_FS)!=0) continue;
+      DEBUG_MSG("Schema::space_fill_correlate: neigh global id " << neigh_gid <<
+        " cx " << local_field_value(neigh_id,SUBSET_COORDINATES_X_FS) << " cy " << local_field_value(neigh_id,SUBSET_COORDINATES_Y_FS) <<
+        " dist " << std::sqrt(out_dist_sqr[i]));
+      local_field_value(neigh_id,FIELD_10_FS) = seed_gid;
+      local_field_value(neigh_id,NEIGHBOR_ID_FS) = -1;
+
+      // correlate
+      int_t num_iterations = -1;
+      Teuchos::RCP<Objective> obj = Teuchos::rcp(new Objective_ZNSSD(this,this_proc_gid_order_[neigh_id]));
+      Teuchos::RCP<Local_Shape_Function> neigh_shape_function = Teuchos::rcp(new Affine_Shape_Function(true,true,true));
+      neigh_shape_function->insert_motion(subset_u,subset_v);
+      Status_Flag corr_status = obj->computeUpdateFast(neigh_shape_function,num_iterations);
+
+      // check the sigma values and status flag
+      scalar_t noise_std_dev = 0.0;
+      const scalar_t cross_sigma = obj->sigma(neigh_shape_function,noise_std_dev);
+      local_field_value(neigh_id,SIGMA_FS) = cross_sigma;
+      if(cross_sigma<0.0){
+        DEBUG_MSG("Schema::space_fill_correlate(): failed cross init sigma");
+        continue;
+      }
+      // check correlation was successful
+      if(corr_status!=CORRELATION_SUCCESSFUL){
+        local_field_value(neigh_id,SIGMA_FS) = -1.0;
+        DEBUG_MSG("Schema::space_fill_correlate(): failed correlation");
+        continue;
+      }
+      // check epipolar error
+      scalar_t cross_t = 0.0, cross_u = 0.0, cross_v = 0.0;
+      neigh_shape_function->map_to_u_v_theta(local_field_value(neigh_id,SUBSET_COORDINATES_X_FS),
+        local_field_value(neigh_id,SUBSET_COORDINATES_Y_FS),cross_u,cross_v,cross_t);
+      const float a = local_field_value(neigh_id,EPI_A_FS);
+      const float b = local_field_value(neigh_id,EPI_B_FS);
+      const float c = local_field_value(neigh_id,EPI_C_FS);
+      const float stereo_x = local_field_value(neigh_id,SUBSET_COORDINATES_X_FS) + cross_u;
+      const float stereo_y = local_field_value(neigh_id,SUBSET_COORDINATES_Y_FS) + cross_v;
+      const float dist = (std::abs(a*stereo_x+b*stereo_y+c)/std::sqrt(a*a+b*b));
+      DEBUG_MSG("Schema::space_fill_correlate(): epipolar error for neighbor " << i << " gid " << neigh_gid << ": " << dist);
+      if(dist>epi_error_tol){
+        local_field_value(neigh_id,SIGMA_FS) = -1.0;
+        DEBUG_MSG("Schema::space_fill_correlate(): subset " << neigh_gid << " failed epipolar distance threshold, epipolar dist: " << dist);
+        continue;
+      }
+      // assume success at this point, set the field values
+      local_field_value(neigh_id,SUBSET_DISPLACEMENT_X_FS) = cross_u;
+      local_field_value(neigh_id,SUBSET_DISPLACEMENT_Y_FS) = cross_v;
+      local_field_value(neigh_id,NEIGHBOR_ID_FS) = subset_gid;
+
+      out_gids.push_back(neigh_gid);
+    }
+  }
+}
+
 int_t
 Schema::initialize_cross_correlation(Teuchos::RCP<Triangulation> tri,
   const Teuchos::RCP<Teuchos::ParameterList> & input_params){
-  DEBUG_MSG("Schema::initialize_cross_correlation(): estimating the projective transform from left to right camera");
+  DEBUG_MSG("Schema::initialize_cross_correlation(): cross init type " << to_string(cross_initialization_method_));
 
   const int_t proc_rank = comm_->get_rank();
 
-  if(initialization_method_==USE_SATELLITE_GEOMETRY){
+  // compute the epipolar coeffs for each subset
+  DEBUG_MSG("Schema::initialize_cross_correlation(): computing subset epipolar coefficients");
+  cv::Mat F = tri->fundamental_matrix();
+  cv::Mat lines;
+  std::vector<cv::Point2f> points(local_num_subsets_);
+  for(int_t i=0;i<local_num_subsets_;++i)
+    points[i] = cv::Point2f(local_field_value(i,SUBSET_COORDINATES_X_FS),local_field_value(i,SUBSET_COORDINATES_Y_FS));
+  cv::computeCorrespondEpilines(points,1,F,lines); // epipolar lines for the subset centroids
+  assert((int)points.size()==lines.rows);
+  for(int_t i=0;i<local_num_subsets_;++i){
+    local_field_value(i,EPI_A_FS) = lines.at<float>(i,0);
+    local_field_value(i,EPI_B_FS) = lines.at<float>(i,1);
+    local_field_value(i,EPI_C_FS) = lines.at<float>(i,2);
+  }
+
+  // if you are processor 0 load the ref and def images and call the estimate routine
+  Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
+  imgParams->set(DICe::gauss_filter_images,gauss_filter_images_);
+  imgParams->set(DICe::gauss_filter_mask_size,gauss_filter_mask_size_);
+  std::string left_image_string;
+  std::string right_image_string;
+  if(proc_rank==0){
+    std::vector<std::string> image_files;
+    std::vector<std::string> stereo_image_files;
+    // decypher the image names from the input files
+    int_t frame_id_start=0,num_frames=1,frame_skip=1;
+    DICe::decipher_image_file_names(input_params,image_files,stereo_image_files,frame_id_start,num_frames,frame_skip);
+    left_image_string = image_files[0];
+    right_image_string = stereo_image_files[0];
+    DEBUG_MSG("Schema::initialize_cross_correlation(): left file " << left_image_string);
+    DEBUG_MSG("Schema::initialize_cross_correlation(): right file " << right_image_string);
+  }
+
+  if(cross_initialization_method_==USE_SPACE_FILLING_ITERATIONS){
+    DEBUG_MSG("Schema::initialize_cross_correlation(): using feature matching and space filling iterations to initialize");
+    float feature_epi_dist_tol = 0.5f;
+    float epi_dist_tol = 0.5f;
+    if(tri->avg_epipolar_error()!=0.0){
+      feature_epi_dist_tol = 3.0*tri->avg_epipolar_error();
+      epi_dist_tol = 3.0*tri->avg_epipolar_error();
+    }
+    DEBUG_MSG("Schema::initialize_cross_correlation(): feature epi dist tol: " << feature_epi_dist_tol);
+    DEBUG_MSG("Schema::initialize_cross_correlation(): epi dist tol: " << epi_dist_tol);
+    DEBUG_MSG("Schema::initialize_cross_correlation(): done computing subset epipolar coefficients");
+    Teuchos::RCP<DICe::Image> left_img = Teuchos::rcp(new Image(left_image_string.c_str(),imgParams));
+    Teuchos::RCP<DICe::Image> right_img = Teuchos::rcp(new Image(right_image_string.c_str(),imgParams));
+
+    // use feature matching to get candidates for seed points
+    // Try several things to get some features to match in the cross correlation:
+    // First do a normal feature matching with low tolerance
+    // Then try with a larger tol
+    // Then try equalizing the histogram and decreasing the tolerance again
+
+    DEBUG_MSG("Schema::initialize_cross_correlation(): begin matching features on processor 0");
+    float feature_tol = 0.005f;
+    std::vector<scalar_t> left_x, right_x, left_y, right_y;
+    std::vector<scalar_t> good_left_x, good_right_x, good_left_y, good_right_y;
+    match_features(left_img,right_img,left_x,left_y,right_x,right_y,feature_tol,".dice/fm_space_filling.png");
+//    if(left_x.size() < 5){
+    if(left_x.size() < 10){
+      DEBUG_MSG("Schema::initialize_cross_correlation(): initial attempt failed with tol = 0.005f, setting to 0.001f and trying again.");
+      feature_tol = 0.001f;
+      match_features(left_img,right_img,left_x,left_y,right_x,right_y,feature_tol,".dice/fm_space_filling.png");
+      if(left_x.size()<10){
+        DEBUG_MSG("Schema::initialize_cross_correlation(): initial attempt failed with tol = 0.001f, equalizing histogram and trying again.");
+        match_features(left_img,right_img,left_x,left_y,right_x,right_y,feature_tol,".dice/fm_space_filling.png",7);
+      }
+    }
+    if(left_x.size()<1){
+      std::cout << "Schema::initialize_cross_correlation(): error: feature matching failed" << std::endl;
+      TEUCHOS_TEST_FOR_EXCEPTION(true,std::runtime_error,"");
+    }
+    DEBUG_MSG("Schema::initialize_cross_correlation(): matching features complete");
+    // Weed out any matched features that aren't on the epipolar line
+
+    cv::Mat featureLines;
+    std::vector<cv::Point2f> featurePoints(left_x.size());
+    good_left_x.reserve(left_x.size());
+    good_left_y.reserve(left_x.size());
+    good_right_x.reserve(left_x.size());
+    good_right_y.reserve(left_x.size());
+    for(size_t i=0;i<left_x.size();++i)
+      featurePoints[i] = cv::Point2f(left_x[i],left_y[i]);
+    cv::computeCorrespondEpilines(featurePoints,1,F,featureLines); // epipolar lines for the feature points
+//    cv::Mat epi_img = cv::imread(".dice/fm_space_filling.png",cv::IMREAD_COLOR);
+    assert((int)featurePoints.size()==featureLines.rows);
+    std::vector<cv::Point2f> good_points;
+    for(size_t i=0;i<featurePoints.size();++i){
+      const float a = featureLines.at<float>(i,0);
+      const float b = featureLines.at<float>(i,1);
+      const float c = featureLines.at<float>(i,2);
+      const float dist = (std::abs(a*right_x[i]+b*right_y[i]+c)/std::sqrt(a*a+b*b));
+      DEBUG_MSG("fm point " << i << " xl " << left_x[i] << " yl " << left_y[i] << " xr " << right_x[i] << " yr " << right_y[i] << " dist from epiline " << dist);
+      if(dist<feature_epi_dist_tol){
+        good_left_x.push_back(left_x[i]);
+        good_left_y.push_back(left_y[i]);
+        good_right_x.push_back(right_x[i]);
+        good_right_y.push_back(right_y[i]);
+      }
+    }
+    DEBUG_MSG("Schema::initialize_cross_correlation(): num good matches: " << good_left_x.size());
+    if(good_left_x.size()<1){ // see if relaxing the tolerance helps
+      feature_epi_dist_tol *= 5.0;
+      epi_dist_tol *= 5.0;
+      DEBUG_MSG("Schema::initialize_cross_correlation(): increasing epipolar tolerances" << good_left_x.size());
+      DEBUG_MSG("Schema::initialize_cross_correlation(): feature epi dist tol: " << feature_epi_dist_tol);
+      DEBUG_MSG("Schema::initialize_cross_correlation(): epi dist tol: " << epi_dist_tol);
+      for(size_t i=0;i<featurePoints.size();++i){
+        const float a = featureLines.at<float>(i,0);
+        const float b = featureLines.at<float>(i,1);
+        const float c = featureLines.at<float>(i,2);
+        const float dist = (std::abs(a*right_x[i]+b*right_y[i]+c)/std::sqrt(a*a+b*b));
+        DEBUG_MSG("fm point " << i << " xl " << left_x[i] << " yl " << left_y[i] << " xr " << right_x[i] << " yr " << right_y[i] << " dist from epiline " << dist);
+        if(dist<feature_epi_dist_tol){
+          good_left_x.push_back(left_x[i]);
+          good_left_y.push_back(left_y[i]);
+          good_right_x.push_back(right_x[i]);
+          good_right_y.push_back(right_y[i]);
+        }
+      }
+    }
+    if(good_left_x.size()<1){
+      std::cout << "Schema::initialize_cross_correlation(): error: feature matching failed (not enough matches)" << std::endl;
+      TEUCHOS_TEST_FOR_EXCEPTION(true,std::runtime_error,"");
+    }
+
+    // build a point cloud
+    // create neighborhood lists using nanoflann:
+    DEBUG_MSG("Schema::initialize_cross_correlation(): creating the point cloud using nanoflann");
+    Teuchos::RCP<Point_Cloud_2D<scalar_t> > pc = Teuchos::rcp(new Point_Cloud_2D<scalar_t>());
+    pc->pts.resize(local_num_subsets_);
+    for(int_t i=0;i<local_num_subsets_;++i){
+      pc->pts[i].x = local_field_value(i,SUBSET_COORDINATES_X_FS);
+      pc->pts[i].y = local_field_value(i,SUBSET_COORDINATES_Y_FS);
+    }
+    DEBUG_MSG("building the kd-tree");
+    Teuchos::RCP<kd_tree_2d_t> kd_tree = Teuchos::rcp(new kd_tree_2d_t(2 /*dim*/,*pc.get(),nanoflann::KDTreeSingleIndexAdaptorParams(10 /* max leaf */)));
+    kd_tree->buildIndex();
+    DEBUG_MSG("Schema::initialize_cross_correlation(): kd-tree completed");
+
+    // turn on compute_def_gradients here
+    bool orig_compute_def_gradients = compute_def_gradients_;
+    compute_def_gradients_ = true;
+    // update the left and right images for stereo cross-correlation
+    set_ref_image(left_image_string);
+    set_def_image(right_image_string);
+
+    mesh_->get_field(NEIGHBOR_ID_FS)->put_scalar(0);
+
+    // set the seed u and v values for the nearest subsets to each feature matched point and do a cross-correlation for each
+    std::vector<size_t> ret_index(1);
+    std::vector<scalar_t> out_dist_sqr(1);
+    const scalar_t max_dist_from_fm_point = 50.0; // a seed subset needs to be within 200 px of this point to be used
+    scalar_t query_pt[2];
+    for(size_t i=0;i<good_left_x.size();++i){
+      query_pt[0] = good_left_x[i];
+      query_pt[1] = good_left_y[i];
+      kd_tree->knnSearch(&query_pt[0],1,&ret_index[0],&out_dist_sqr[0]);
+      if(out_dist_sqr[0]>max_dist_from_fm_point*max_dist_from_fm_point){
+        DEBUG_MSG("fm matched point " << i << " x " << good_left_x[i] << " y " << good_left_y[i] << " was too far from any subsets to be used");
+        continue;
+      }
+      const int_t local_id = ret_index[0];
+      if(local_field_value(local_id,NEIGHBOR_ID_FS) != 0) continue; // seed subset can't be one that already has been correlated
+      DEBUG_MSG("Schema::initialize_cross_correlation(): closest subset to fm match point " << good_left_x[i] << " " << good_left_y[i] <<
+        " is local subset " << local_id << " at " << local_field_value(local_id,SUBSET_COORDINATES_X_FS) << " " << local_field_value(local_id,SUBSET_COORDINATES_Y_FS) );
+      local_field_value(local_id,NEIGHBOR_ID_FS) = -1; // mark this seed as having been visited
+
+      // set the u and v values for this point and correlate it
+      const scalar_t u = good_right_x[i] - good_left_x[i];
+      const scalar_t v = good_right_y[i] - good_left_y[i];
+      DEBUG_MSG("Schema::initialize_cross_correlation(): seed SUBSET_ID " << subset_global_id(local_id) << " seed u " << u << " seed v " << v);
+
+      // correlate
+      int_t num_iterations = -1;
+      Teuchos::RCP<Local_Shape_Function> shape_function = Teuchos::rcp(new Affine_Shape_Function(true,true,true));
+      Teuchos::RCP<Objective> obj = Teuchos::rcp(new Objective_ZNSSD(this,this_proc_gid_order_[local_id]));
+      shape_function->insert_motion(u,v);
+      Status_Flag corr_status = obj->computeUpdateFast(shape_function,num_iterations);
+
+      // check the sigma values and status flag
+      scalar_t noise_std_dev = 0.0;
+      const scalar_t cross_sigma = obj->sigma(shape_function,noise_std_dev);
+      local_field_value(local_id,SIGMA_FS) = cross_sigma;
+      if(cross_sigma<0.0){
+        DEBUG_MSG("Schema::initialize_cross_correlation(): failed cross init sigma");
+        continue;
+      }
+      if(corr_status!=CORRELATION_SUCCESSFUL){
+        local_field_value(local_id,SIGMA_FS) = -1.0;
+        DEBUG_MSG("Schema::initialize_cross_correlation(): failed correlation");
+        continue;
+      }
+      scalar_t cross_u = 0.0, cross_v = 0.0, cross_t = 0.0;
+      shape_function->map_to_u_v_theta(local_field_value(local_id,SUBSET_COORDINATES_X_FS),
+        local_field_value(local_id,SUBSET_COORDINATES_Y_FS),
+        cross_u,cross_v,cross_t);
+      // check the epipolar distance
+      const float a = local_field_value(local_id,EPI_A_FS);
+      const float b = local_field_value(local_id,EPI_B_FS);
+      const float c = local_field_value(local_id,EPI_C_FS);
+      const float stereo_x = local_field_value(local_id,SUBSET_COORDINATES_X_FS) + cross_u;
+      const float stereo_y = local_field_value(local_id,SUBSET_COORDINATES_Y_FS) + cross_v;
+      const float dist = (std::abs(a*stereo_x+b*stereo_y+c)/std::sqrt(a*a+b*b));
+      DEBUG_MSG("Schema::initialize_cross_correlation(): epipolar error for seed subset: " << dist);
+      if(dist>epi_dist_tol){
+        local_field_value(local_id,SIGMA_FS) = -1.0;
+        DEBUG_MSG("Schema::initialize_cross_correlation(): failed epipolar distance threshold");
+        continue;
+      }
+      local_field_value(local_id,SUBSET_DISPLACEMENT_X_FS) = cross_u;
+      local_field_value(local_id,SUBSET_DISPLACEMENT_Y_FS) = cross_v;
+      local_field_value(local_id,NEIGHBOR_ID_FS) = subset_global_id(local_id); // seeds get themselves as neighbors
+      local_field_value(local_id,FIELD_10_FS) = subset_global_id(local_id);
+
+      const int_t num_neigh = 7;
+      const int_t max_iterations = 1000000;
+      int_t it_count = 0;
+      std::vector<int_t> in_gids, out_gids;
+      in_gids.reserve(local_num_subsets_);
+      out_gids.reserve(local_num_subsets_);
+      in_gids.push_back(subset_global_id(local_id));
+      while(in_gids.size()>0){
+        TEUCHOS_TEST_FOR_EXCEPTION(it_count > max_iterations,std::runtime_error,
+          "error: inifinte loop detected in space filling initializer"); // guard against infinite loop
+        space_fill_correlate(subset_global_id(local_id),in_gids,out_gids,num_neigh,kd_tree,epi_dist_tol);
+        in_gids.clear();
+        for(size_t i=0;i<out_gids.size();++i)
+          in_gids.push_back(out_gids[i]);
+        it_count++;
+      } // end space filling loop for each seed
+    } // end good candidate seed points
+
+    // find any points that weren't reached by the space filling and turn them off
+    for(int_t i=0;i<local_num_subsets_;++i){
+      const float a = local_field_value(i,EPI_A_FS);
+      const float b = local_field_value(i,EPI_B_FS);
+      const float c = local_field_value(i,EPI_C_FS);
+      const float stereo_x = local_field_value(i,SUBSET_COORDINATES_X_FS) + local_field_value(i,SUBSET_DISPLACEMENT_X_FS);
+      const float stereo_y = local_field_value(i,SUBSET_COORDINATES_Y_FS) + local_field_value(i,SUBSET_DISPLACEMENT_Y_FS);
+      const float dist = (std::abs(a*stereo_x+b*stereo_y+c)/std::sqrt(a*a+b*b));
+      local_field_value(i,CROSS_EPI_ERROR_FS) = dist;
+//      DEBUG_MSG("Schema::initialize_cross_correlation(): epipolar error for subset: " << dist);
+      if(dist>epi_dist_tol){
+        local_field_value(i,SIGMA_FS) = -1.0;
+//        DEBUG_MSG("Schema::initialize_cross_correlation(): failed epipolar distance threshold");
+      }
+    }
+
+
+    // try to correlate the points that the space filling curve didn't get to by using the intersection
+    // of a line between the nearest neighbors and the epipolar line as an initial guess
+    for(int_t i=0;i<local_num_subsets_;++i){
+      if(local_field_value(i,NEIGHBOR_ID_FS)>0) continue; // only iterate the points that weren't reached by the space filling
+      DEBUG_MSG("Schema::initialize_cross_correlation(): looking for left and right neighbors of subset " << subset_global_id(i));
+      int_t left_neigh_id = -1;
+      int_t right_neigh_id = -1;
+      // find the closes point to the left and to the right
+      assert(step_size_x_>0.0);
+      query_pt[0] = local_field_value(i,SUBSET_COORDINATES_X_FS) - step_size_x_;
+      query_pt[1] = local_field_value(i,SUBSET_COORDINATES_Y_FS);
+      while(query_pt[0]>5.0){
+        // find the nearest neighbor to this point:
+        kd_tree->knnSearch(&query_pt[0],1,&ret_index[0],&out_dist_sqr[0]);
+        const int_t neigh_id  = ret_index[0];
+        assert(neigh_id>=0&&neigh_id<local_num_subsets_);
+        if(local_field_value(neigh_id,SIGMA_FS)>=0.0){
+          left_neigh_id = neigh_id;
+          break;
+        }
+        query_pt[0] = query_pt[0] - step_size_x_;
+      }
+      query_pt[0] = local_field_value(i,SUBSET_COORDINATES_X_FS) + step_size_x_;
+      query_pt[1] = local_field_value(i,SUBSET_COORDINATES_Y_FS);
+      while(query_pt[0]<=ref_img_->width()-5.0){
+        // find the nearest neighbor to this point:
+        kd_tree->knnSearch(&query_pt[0],1,&ret_index[0],&out_dist_sqr[0]);
+        const int_t neigh_id  = ret_index[0];
+        assert(neigh_id>=0&&neigh_id<local_num_subsets_);
+        if(local_field_value(neigh_id,SIGMA_FS)>=0.0){
+          right_neigh_id = neigh_id;
+          break;
+        }
+        query_pt[0] = query_pt[0] + step_size_x_;
+      }
+      DEBUG_MSG("Schema::initialize_cross_correlation(): left neigh id " << left_neigh_id << " right neigh id " << right_neigh_id);
+
+      if(left_neigh_id>=0&&right_neigh_id>=0&&left_neigh_id<local_num_subsets_&&right_neigh_id<local_num_subsets_){
+        const float a = local_field_value(i,EPI_A_FS);
+        const float b = local_field_value(i,EPI_B_FS);
+        const float c = local_field_value(i,EPI_C_FS);
+        if(b==0.0)continue;
+        // compute the coeffs for the epipolar line
+        const scalar_t A = -1.0*a/b;
+        const scalar_t C = -1.0*c/b;
+        // compute the coeffs for the line between the good points in right image space
+        const scalar_t x1 = local_field_value(left_neigh_id,SUBSET_COORDINATES_X_FS) + local_field_value(left_neigh_id,SUBSET_DISPLACEMENT_X_FS);
+        const scalar_t y1 = local_field_value(left_neigh_id,SUBSET_COORDINATES_Y_FS) + local_field_value(left_neigh_id,SUBSET_DISPLACEMENT_Y_FS);
+        const scalar_t x2 = local_field_value(right_neigh_id,SUBSET_COORDINATES_X_FS) + local_field_value(right_neigh_id,SUBSET_DISPLACEMENT_X_FS);
+        const scalar_t y2 = local_field_value(right_neigh_id,SUBSET_COORDINATES_Y_FS) + local_field_value(right_neigh_id,SUBSET_DISPLACEMENT_Y_FS);
+        const scalar_t B = (y2-y1)/(x2-x1);
+        const scalar_t D = y1 - B*x1;
+        if(A-B==0.0) continue;
+        const scalar_t px = (D-C)/(A-B);
+        const scalar_t py = A*(D-C)/(A-B) + C;
+        const scalar_t u = px - local_field_value(i,SUBSET_COORDINATES_X_FS);
+        const scalar_t v = py - local_field_value(i,SUBSET_COORDINATES_Y_FS);
+        DEBUG_MSG("Schema::initialize_cross_correlation(): initial guess based on epipolar nearest neighbor line intersection: " << px << " " << py << " u " << u << " v " << v);
+        // check bounds on this point
+        if(px<5.0||px>ref_img_->width()-5.0) continue;
+        if(py<5.0||py>ref_img_->height()-5.0) continue;
+
+        // Try correlating based on this point
+        // TODO consolidate this into a function call:
+        int_t num_iterations = -1;
+        Teuchos::RCP<Local_Shape_Function> shape_function = Teuchos::rcp(new Affine_Shape_Function(true,true,true));
+        Teuchos::RCP<Objective> obj = Teuchos::rcp(new Objective_ZNSSD(this,this_proc_gid_order_[i]));
+        shape_function->insert_motion(u,v);
+        Status_Flag corr_status = obj->computeUpdateFast(shape_function,num_iterations);
+
+        // check the sigma values and status flag
+        scalar_t noise_std_dev = 0.0;
+        const scalar_t cross_sigma = obj->sigma(shape_function,noise_std_dev);
+        local_field_value(i,SIGMA_FS) = cross_sigma;
+        if(cross_sigma<0.0){
+          DEBUG_MSG("Schema::initialize_cross_correlation(): failed cross init sigma (even after line intersection method applied)");
+          continue;
+        }
+        if(corr_status!=CORRELATION_SUCCESSFUL){
+          local_field_value(i,SIGMA_FS) = -1.0;
+          DEBUG_MSG("Schema::initialize_cross_correlation(): failed correlation (even after line intersection method applied)");
+          continue;
+        }
+        scalar_t cross_u = 0.0, cross_v = 0.0, cross_t = 0.0;
+        shape_function->map_to_u_v_theta(local_field_value(i,SUBSET_COORDINATES_X_FS),
+          local_field_value(i,SUBSET_COORDINATES_Y_FS),
+          cross_u,cross_v,cross_t);
+        // check the epipolar distance
+        const float stereo_x = local_field_value(i,SUBSET_COORDINATES_X_FS) + cross_u;
+        const float stereo_y = local_field_value(i,SUBSET_COORDINATES_Y_FS) + cross_v;
+        const float dist = (std::abs(a*stereo_x+b*stereo_y+c)/std::sqrt(a*a+b*b));
+        DEBUG_MSG("Schema::initialize_cross_correlation(): epipolar error for second pass subset: " << dist);
+        if(dist>epi_dist_tol){
+          local_field_value(i,SIGMA_FS) = -1.0;
+          DEBUG_MSG("Schema::initialize_cross_correlation(): failed epipolar distance threshold");
+          continue;
+        }
+        local_field_value(i,SUBSET_DISPLACEMENT_X_FS) = cross_u;
+        local_field_value(i,SUBSET_DISPLACEMENT_Y_FS) = cross_v;
+        local_field_value(i,NEIGHBOR_ID_FS) = subset_global_id(i); // seeds get themselves as neighbors
+        local_field_value(i,FIELD_10_FS) = subset_global_id(i);
+//        const int_t num_neigh = 7;
+//        const int_t max_iterations = 1000000;
+//        int_t it_count = 0;
+//        std::vector<int_t> in_gids, out_gids;
+//        in_gids.reserve(local_num_subsets_);
+//        out_gids.reserve(local_num_subsets_);
+//        in_gids.push_back(subset_global_id(i));
+//        while(in_gids.size()>0){
+//          TEUCHOS_TEST_FOR_EXCEPTION(it_count > max_iterations,std::runtime_error,
+//            "error: inifinte loop detected in space filling initializer"); // guard against infinite loop
+//          space_fill_correlate(subset_global_id(i),in_gids,out_gids,num_neigh,kd_tree,epi_dist_tol);
+//          in_gids.clear();
+//          for(size_t i=0;i<out_gids.size();++i)
+//            in_gids.push_back(out_gids[i]);
+//          it_count++;
+//        } // end space filling loop for each seed
+      }
+    } // end subset loop for neighbor initializers
+
+    // reset the compute def gradients flag
+    compute_def_gradients_ = orig_compute_def_gradients;
+    DEBUG_MSG("Schema::initialize_cross_correlation(): space filling iterations successful");
+    return 0;
+  }
+
+  if(cross_initialization_method_==USE_SATELLITE_GEOMETRY){
 #if DICE_ENABLE_NETCDF
     mesh_->create_field(field_enums::EARTH_SURFACE_X_FS);
     mesh_->create_field(field_enums::EARTH_SURFACE_Y_FS);
     mesh_->create_field(field_enums::EARTH_SURFACE_Z_FS);
-    std::vector<std::string> image_files;
-    std::vector<std::string> stereo_image_files;
-    int_t frame_id_start=0,num_frames=1,frame_skip=1;
-    DICe::decipher_image_file_names(input_params,image_files,stereo_image_files,frame_id_start,num_frames,frame_skip);
-    const std::string left_file = image_files[0];
-    const std::string right_file = stereo_image_files[0];
-    std::cout << " left file " << left_file << std::endl;
-    std::cout << " right file " << right_file << std::endl;
-    Teuchos::ParameterList lat_long_params = DICe::netcdf::netcdf_to_lat_long_projection_parameters(left_file,right_file);
+    Teuchos::ParameterList lat_long_params = DICe::netcdf::netcdf_to_lat_long_projection_parameters(left_image_string,right_image_string);
     std::vector<float> left_x(local_num_subsets_);
     std::vector<float> left_y(local_num_subsets_);
     std::vector<float> right_x;
@@ -2790,19 +3292,9 @@ Schema::initialize_cross_correlation(Teuchos::RCP<Triangulation> tri,
 #endif
   }
 
-
+  DEBUG_MSG("Schema::initialize_cross_correlation(): estimating the projective transform from left to right camera");
   // if you are processor 0 load the ref and def images and call the estimate routine
   if(proc_rank==0){
-    // decypher the image names from the input files
-    std::vector<std::string> image_files;
-    std::vector<std::string> stereo_image_files;
-    int_t frame_id_start=0,num_frames=1,frame_skip=1;
-    DICe::decipher_image_file_names(input_params,image_files,stereo_image_files,frame_id_start,num_frames,frame_skip);
-    Teuchos::RCP<Teuchos::ParameterList> imgParams = Teuchos::rcp(new Teuchos::ParameterList());
-    imgParams->set(DICe::gauss_filter_images,gauss_filter_images_);
-    imgParams->set(DICe::gauss_filter_mask_size,gauss_filter_mask_size_);
-    const std::string left_image_string = image_files[0];
-    const std::string right_image_string = stereo_image_files[0];
     Teuchos::RCP<DICe::Image> left_image = Teuchos::rcp(new Image(left_image_string.c_str(),imgParams));
     Teuchos::RCP<DICe::Image> right_image = Teuchos::rcp(new Image(right_image_string.c_str(),imgParams));
     const int_t success = tri->estimate_projective_transform(left_image,right_image,true,use_nonlinear_projection_,proc_rank);
