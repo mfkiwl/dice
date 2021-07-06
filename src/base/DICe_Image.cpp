@@ -2,7 +2,7 @@
 // ************************************************************************
 //
 //               Digital Image Correlation Engine (DICe)
-//                 Copyright 2015 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
+//                 Copyright 2021 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
 //
 // Under the terms of Contract DE-NA0003525 with NTESS,
 // the U.S. Government retains certain rights in this software.
@@ -141,6 +141,7 @@ Image_<S>::Image_(const char * file_name,
     utils::read_image(file_name,intensities_,params);
   }
   catch(...){
+    std::cout << "Error, either the image path is not valid, the file does not exist, or the path contains non-UTF-8 characters (for example chinese characters)" << std::endl;
     TEUCHOS_TEST_FOR_EXCEPTION(true,std::runtime_error,"Error, image file read failure");
   }
   assert(intensities_.size()>0);
